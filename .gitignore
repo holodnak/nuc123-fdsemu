@@ -1,0 +1,5 @@
+Keil/lst
+Keil/obj
+Keil/*.uvgui*
+Keil/*.uvopt
+
