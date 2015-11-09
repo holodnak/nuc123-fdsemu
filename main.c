@@ -50,6 +50,7 @@ void SYS_Init(void)
     CLK_EnableModuleClock(TMR0_MODULE);
     CLK_EnableModuleClock(TMR1_MODULE);
     CLK_EnableModuleClock(TMR2_MODULE);
+    CLK_EnableModuleClock(USBD_MODULE);
 
     /* Select HCLK as the clock source of SPI0 */
     CLK_SetModuleClock(UART0_MODULE, CLK_CLKSEL1_UART_S_HXT, CLK_CLKDIV_UART(1));
@@ -58,6 +59,7 @@ void SYS_Init(void)
     CLK_SetModuleClock(TMR0_MODULE, CLK_CLKSEL1_TMR0_S_HCLK, 0);
     CLK_SetModuleClock(TMR1_MODULE, CLK_CLKSEL1_TMR1_S_HCLK, 0);
     CLK_SetModuleClock(TMR2_MODULE, CLK_CLKSEL1_TMR2_S_HCLK, 0);
+    CLK_SetModuleClock(USBD_MODULE, 0, CLK_CLKDIV_USB(3));
 
     /* Select UART module clock source */
 
@@ -111,8 +113,8 @@ void SYS_Init(void)
     NVIC_EnableIRQ(EINT0_IRQn);
 
     /* Enable interrupt de-bounce function and select de-bounce sampling cycle time is 1024 clocks of LIRC clock */
-//    GPIO_SET_DEBOUNCE_TIME(GPIO_DBCLKSRC_HCLK, GPIO_DBCLKSEL_1024);
-//    GPIO_ENABLE_DEBOUNCE(PB, BIT14);
+	GPIO_SET_DEBOUNCE_TIME(GPIO_DBCLKSRC_HCLK, GPIO_DBCLKSEL_4);
+	GPIO_ENABLE_DEBOUNCE(PB, BIT14);
 }
 
 void UART0_Init()
@@ -135,7 +137,7 @@ void SPI_Init(void)
     /* Configure as a master, clock idle low, 32-bit transaction, drive output on falling clock edge and latch input on rising edge. */
     /* Set IP clock divider. SPI clock rate = 2MHz */
     SPI_Open(SPI0, SPI_MASTER, SPI_MODE_0, 8, 30000000);
-    SPI_Open(SPI1, SPI_MASTER, SPI_MODE_3, 8, 15000000);
+    SPI_Open(SPI1, SPI_MASTER, SPI_MODE_0, 8, 1000000);
 
     /* Enable the automatic hardware slave select function. Select the SS pin and configure as low-active. */
 //    SPI_EnableAutoSS(SPI0, SPI_SS0, SPI_SS_ACTIVE_LOW);
@@ -150,7 +152,7 @@ static void print_block_info(int block)
 		printf("block %X: empty\r\n",block);
 	}
 	else {
-		printf("block %X: '%s'\r\n",block,header2.name);
+		printf("block %X: id = %02d, '%s'\r\n",block,header2.id,header2.name);
 	}
 }
 
@@ -271,8 +273,15 @@ static void console_tick(void)
 //			memcheck();
 			break;
 		case 'd':
-//			hexdump("disk + 59106",SDRAM + 59106,1024);
+		{
+			char buf[256];
+			flash_read_page((diskblock << 8) | 0xF,buf);
+			hexdump("disk + 3590",buf,256);
+		}
  			break;
+		case 'c':
+			flash_copy_block(0xC,1);
+			break;
 		}
 	}
 }

@@ -16,5 +16,15 @@ void flash_read_disk_header(int block,flash_header_t *header);
 void flash_read_disk_start(int block);
 void flash_read_disk_stop(void);
 void flash_read_disk(uint8_t *data,int len);
+void flash_read_page(int page,uint8_t *buf);
+void flash_read_sector(int block,int sector,uint8_t *buf);
+void flash_write_page(int page,uint8_t *buf);
+void flash_write_sector(int block,int sector,uint8_t *buf);
+void flash_copy_block(int src,int dest);
+void flash_erase_block(int block);
+void flash_erase_sector(int block,int sector);
 
+int flash_get_size(void);
+int flash_get_total_blocks(void);
+int flash_find_empty_block(void);
 #endif

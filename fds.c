@@ -46,15 +46,23 @@ void TMR1_IRQHandler(void)
 	}
 }
 
-int catchwrites = 0;
+#define WRITEBUFSIZE	(1024 * 8)
+#define DECODEBUFSIZE	(1024 * 2)
 
-#define BUFSIZE	(1024 * 8)
+uint8_t writebuf[WRITEBUFSIZE];
+uint8_t decodebuf[DECODEBUFSIZE];
 
-uint8_t writebuf[BUFSIZE];
-uint8_t decodebuf[1024 * 4];
+struct write_s {
+	int diskpos;			//position on disk where write was started
+	int rawstart;			//position in writebuf the data begins
+	int rawend;				//position in writebuf the data ends
+	int decstart;			//position in decodebuf the data begins
+	int decend;				//position in decodebuf the data ends
+} writes[4];
 
-int write_bufend[8];		//position in writebuf the write ends at
-int write_diskpos[8];		//position on disk the write starts at
+//int write_bufend[8];		//position in writebuf the write ends at
+//int write_diskpos[8];		//position on disk the write starts at
+//int write_len[8];			//length of decoded data
 int write_num;				//number of writes
 int write_pos;				//position in buffer for writes
 
@@ -73,22 +81,36 @@ enum {
 	FLASHHEADERSIZE=0x100,
 };
 
+__inline uint8_t raw_to_raw03_byte(uint8_t raw)
+{
+/*
+  59 59 5a 5b 5b 5b 5a 5b
+  89 b8 89 5a 5b 5a 5b 89
+*/
+	if(raw < 0x50)
+		return(3);
+	else if(raw < 0x78)
+		return(0);
+	else if(raw < 0xA0)
+		return(1);
+	else if(raw < 0xD0)
+		return(2);
+	return(3);
+}
+
 //Turn raw data from adapter to pulse widths (0..3)
 //Input capture clock is 6MHz.  At 96.4kHz (FDS bitrate), 1 bit ~= 62 clocks
 //We could be clever about this and account for drive speed fluctuations, etc. but this will do for now
 static void raw_to_raw03(uint8_t *raw, int rawSize) {
 	int i;
 	for(i=0; i<rawSize; ++i) {
-/*
-  59 59 5a 5b 5b 5b 5a 5b
-  89 b8 89 5a 5b 5a 5b 89
-*/
-		if(raw[i]<0x50) raw[i]=3;          //3=out of range
+		raw[i] = raw_to_raw03_byte(raw[i]);
+/*		if(raw[i]<0x50) raw[i]=3;          //3=out of range
 		else if(raw[i]<0x78) raw[i]=0;     //0=1 bit
 		else if(raw[i]<0xA0) raw[i]=1;     //1=1.5 bits
 		else if(raw[i]<0xD0) raw[i]=2;     //2=2 bits
 		else raw[i]=3;                     //3=out of range
-	}
+*/	}
 }
 
 //don't include gap end
@@ -105,22 +127,6 @@ static uint16_t calc_crc(uint8_t *buf, int size) {
 	return crc;
 }
 
-static int calc_crc2(uint8_t *buf, int size) {
-	uint32_t crc=0x8000;
-	int i = size;
-	while(size--) {
-		crc |= (*buf++)<<16;
-		for(i=0;i<8;i++) {
-			if(crc & 1) crc ^= 0x10810;
-			crc>>=1;
-		}
-		if(crc == 0) {
-			return(i - size);
-		}
-	}
-	return 0;
-}
-
 void hexdump(char *desc, void *addr, int len);
 
 int block4Size = 0;
@@ -130,13 +136,12 @@ static int block_decode(uint8_t *dst, uint8_t *src, int *inP, int *outP, int src
 //	int outEnd=(*outP+blockSize+2)*8;
 //	int out=(*outP)*8;
 	int start;
-	int filelen;
+//	int filelen;
 	int blocktypefound = 0;
 	int in = 0, out = 0;
 	int outEnd = dstSize * 8;
 	int zeros;
 	char bitval;
-	char tmp[64];
 
 	//scan for gap end
 	for(zeros=0; src[in]!=1 || zeros<MIN_GAP_SIZE; in++) {
@@ -153,7 +158,7 @@ static int block_decode(uint8_t *dst, uint8_t *src, int *inP, int *outP, int src
 			return 0;
 		}
 	}
-	printf("found gap end at %d, srcSize = %d\r\n",in,srcSize);
+	printf("found gap end at %d, srcSize = %d, outEnd = %d\r\n",in,srcSize,outEnd);
 
 	start=in;
 
@@ -202,9 +207,9 @@ static int block_decode(uint8_t *dst, uint8_t *src, int *inP, int *outP, int src
 				blockSize = 16;
 			}
 			if(blockType == 4) {
-				blockSize = block4Size;
+				blockSize = block4Size + 1;
 			}
-			outEnd=(blockSize+3)*8;
+			outEnd=(blockSize+2)*8;
 			printf("blocktype is %d, blocksize = %d, outEnd = %d\r\n",blockType,blockSize,outEnd);
 		}
 	} while(out<outEnd);
@@ -217,90 +222,282 @@ static int block_decode(uint8_t *dst, uint8_t *src, int *inP, int *outP, int src
 	}*/
 	out=out/8-2;
 
-	printf("Out%d %X(%X)-%X(%X)\n", blockType, start, *outP, in, out-1);
+	printf("Out%d %X(%X)-%X(%X) (bs=%d, out=%d)\n", blockType, start, *outP, in, out-1,blockSize, out);
 
-	if(calc_crc(dst+*outP,blockSize+2)) {
+	if(calc_crc(dst,blockSize+2)) {
 		uint16_t crc1=(dst[out+1]<<8)|dst[out];
 		uint16_t crc2;
 		dst[out]=0;
 		dst[out+1]=0;
-		crc2=calc_crc(dst+*outP,blockSize+2);
+		crc2=calc_crc(dst,blockSize+2);
 		dst[out] = (uint8_t)(crc1 >> 0);
 		dst[out+1] = (uint8_t)(crc1 >> 8);
-		printf("Bad CRC (%04X!=%04X)\r\n", crc1, crc2);
+		printf("Bad CRC (%04X!=%04X) (out=%d)\r\n", crc1, crc2, out);
 	}
 
 	//	dst[out]=0;     //clear CRC
 	//	dst[out+1]=0;
-	dst[out+2]=0;   //+spare bit
+//	dst[out+2]=0;   //+spare bit
 	*inP=in;
 	*outP=out;
 
 	if(blockType == 3) {
 		block4Size = dst[0xD];
 		block4Size |= dst[0xE] << 8;
-//		block4Size = 117;
 	}
 
-	return blockSize;
+	return blockSize + 2;
+}
+
+__inline void decode(uint8_t *dst, uint8_t src, int dstSize, int *len) {
+/*	int start;
+	int blocktypefound = 0;
+	int in = 0, out = 0;
+	int outEnd = dstSize * 8;
+	int zeros;
+	char bitval;*/
+//	int blockSize;
+//	char blockType;
+	
+	//states:
+	// 0 = finding end of gap before file
+	// 1 = decoding data
+	static int state = 0;
+	static int zeros = 0;
+	static int out, outEnd;
+	static int blockSize;
+	static char blockType;
+	static char bitval;
+	static int blocktypefound;
+
+	//reset to state 0
+	if(dst == 0) {
+		state = 0;
+		return;
+	}
+
+	//finding zeros
+	if(state == 0) {
+		if(src == 1) {
+			state = 1;
+			out = 0;
+			outEnd = 0x10000;
+			blockSize = 0;
+			blockType = 0;
+			bitval = 1;
+			blocktypefound = 0;
+			zeros = 0;
+		}
+		if(src == 0) {
+			zeros++;
+		}
+		return;
+	}
+	
+	//decoding data
+	else if(state == 1) {
+		switch(src | (bitval << 4)) {
+			case 0x11:
+				out++;
+			case 0x00:
+				out++;
+				bitval=0;
+				break;
+			case 0x12:
+				out++;
+			case 0x01:
+			case 0x10:
+				dst[out/8] |= 1 << (out & 7);
+				out++;
+				bitval=1;
+				break;
+			default: //Unexpected value.  Keep going, we'll probably get a CRC warning
+//				printf("glitch(%d) @ %X(%X.%d)\n", src[in], in, out/8, out%8);
+				out++;
+				bitval=0;
+				break;
+		}
+		if((out / 8) > 0 && blocktypefound == 0) {
+			blocktypefound = 1;
+			blockType = dst[0];
+			if(blockType == 2) {
+				blockSize = 2;
+			}
+			if(blockType == 3) {
+				blockSize = 16;
+			}
+			if(blockType == 4) {
+				blockSize = block4Size + 1;
+			}
+			outEnd=(blockSize+2)*8;
+			*len = blockSize + 2;
+//			printf("blocktype is %d, blocksize = %d, outEnd = %d\r\n",blockType,blockSize,outEnd);
+		}
+		if(out >= outEnd) {
+			state = 2;
+			return;
+		}
+	}
+	
+	//finished decoding block, check crc
+	else if(state == 2) {
+		if(calc_crc(dst,blockSize+2)) {
+			uint16_t crc1=(dst[out+1]<<8)|dst[out];
+			uint16_t crc2;
+			dst[out]=0;
+			dst[out+1]=0;
+			crc2=calc_crc(dst,blockSize+2);
+			dst[out] = (uint8_t)(crc1 >> 0);
+			dst[out+1] = (uint8_t)(crc1 >> 8);
+			printf("Bad CRC (%04X!=%04X) (out=%d)\r\n", crc1, crc2, out);
+		}
+
+		if(blockType == 3) {
+			block4Size = dst[0xD];
+			block4Size |= dst[0xE] << 8;
+		}
+		state = 0;
+	}
+/*
+	//scan for gap end
+	for(zeros=0; src[in]!=1 || zeros<MIN_GAP_SIZE; in++) {
+		if(src[in] == 1)
+			break;
+		if(src[in]==0) {
+			zeros++;
+			} else {
+//			printf("zero counter reset at %d (src[in] = %d)\r\n",in,src[in]);
+			zeros=0;
+		}
+		if(in>=srcSize-2) {
+			printf("failed to find gap end, in = %d, srcsize = %d\r\n",in,srcSize);
+			return 0;
+		}
+	}
+	printf("found gap end at %d, srcSize = %d, outEnd = %d\r\n",in,srcSize,outEnd);
+
+	start=in;
+
+	printf("in = %d, srcSize = %d\r\n",in,srcSize);
+
+	bitval=1;
+	in++;
+
+	do {
+		if(in>=srcSize) {   //not necessarily an error, probably garbage at end of disk
+			printf("Disk end\r\n");
+			return 0;
+		}
+		switch(src[in]|(bitval<<4)) {
+			case 0x11:
+				out++;
+			case 0x00:
+				out++;
+				bitval=0;
+				break;
+			case 0x12:
+				out++;
+			case 0x01:
+			case 0x10:
+				dst[out/8] |= 1<<(out&7);
+				out++;
+				bitval=1;
+				break;
+			default: //Unexpected value.  Keep going, we'll probably get a CRC warning
+				printf("glitch(%d) @ %X(%X.%d)\n", src[in], in, out/8, out%8);
+				out++;
+				bitval=0;
+				break;
+		}
+		in++;
+		if((out / 8) > 0 && blocktypefound == 0) {
+			blocktypefound = 1;
+			blockType = dst[0];
+			if(blockType == 2) {
+				blockSize = 2;
+			}
+			if(blockType == 3) {
+				blockSize = 16;
+			}
+			if(blockType == 4) {
+				blockSize = block4Size + 1;
+			}
+			outEnd=(blockSize+2)*8;
+			printf("blocktype is %d, blocksize = %d, outEnd = %d\r\n",blockType,blockSize,outEnd);
+		}
+	} while(out<outEnd);
+
+	out=out/8-2;
+
+	printf("Out%d %X(%X)-%X(%X) (bs=%d, out=%d)\n", blockType, start, *outP, in, out-1,blockSize, out);
+
+	if(calc_crc(dst,blockSize+2)) {
+		uint16_t crc1=(dst[out+1]<<8)|dst[out];
+		uint16_t crc2;
+		dst[out]=0;
+		dst[out+1]=0;
+		crc2=calc_crc(dst,blockSize+2);
+		dst[out] = (uint8_t)(crc1 >> 0);
+		dst[out+1] = (uint8_t)(crc1 >> 8);
+		printf("Bad CRC (%04X!=%04X) (out=%d)\r\n", crc1, crc2, out);
+	}
+
+//	dst[out+2]=0;   //+spare bit
+	*inP=in;
+	*outP=out;
+
+	if(blockType == 3) {
+		block4Size = dst[0xD];
+		block4Size |= dst[0xE] << 8;
+	}
+
+	return blockSize + 2;
+	*/
+	return;
 }
 
 /*
 	pos = position on disk
 	start = position in writebuf
 */
-static void decode_write(uint8_t *decodebuf,uint8_t *buf,int pos, int size)
+static int decode_write(uint8_t *decbuf,uint8_t *buf,int pos, int size)
 {
 	int in,out,i;
 	int type, len;
 //	uint8_t *disk = SDRAM;
 
-	printf("decoding write in writebuf at disk pos %d, size = %d\r\n",pos,size);
+//	printf("decoding write in writebuf at disk pos %d, size = %d\r\n",pos,size);
 
 	in = 0;
 	out = 0;
-	for(i=0;i<(1024 * 4);i++) {
-		decodebuf[i] = 0;
+	for(i=0;i<DECODEBUFSIZE;i++) {
+		decbuf[i] = 0;
 	}
-	len = block_decode(decodebuf,buf,&in,&out,size,0x10000,size,type);
+	len = block_decode(decbuf,buf,&in,&out,size,0x10000,size,type);
 	printf("decoded block, size = %d (len = %d)\r\n",out, len);
-//	hexdump("decodebuf",decodebuf,256);
+//	hexdump("decbuf",decbuf,128);
 
-/*	out += 3;
-	disk += pos;
-	for(i=0;i<((976 / 8) - 1);i++) {
-		*disk++ = 0;
-	}
-	*disk++ = 0x80;
-	for(i=0;i<out;i++) {
-		*disk++ = decodebuf[i];
-	}
-	for(i=0;i<40;i++) {
-		*disk++ = 0;
-	}*/
+	return(len);
 }
 
+//uint8_t writelen;
+//int havewrite;
 
-
-
-
+uint8_t decodebuf2[1024 * 2];
 
 void EINT0_IRQHandler(void)
 {
-    // For PB.14, clear the INT flag
     GPIO_CLR_INT_FLAG(PB, BIT14);
 
-	led ^= 1;
-	PB8 = led;
-
-	if(catchwrites) {
+	if(IS_WRITE()) {
 		int ra = TIMER_GetCounter(TIMER0);
 
 		TIMER0->TCSR = TIMER_TCSR_CRST_Msk;
-		TIMER0->TCSR = TIMER_CONTINUOUS_MODE | 7 | TIMER_TCSR_TDR_EN_Msk;
-		TIMER0->TCSR |= TIMER_TCSR_CEN_Msk;
+		TIMER0->TCSR = TIMER_CONTINUOUS_MODE | 7 | TIMER_TCSR_TDR_EN_Msk | TIMER_TCSR_CEN_Msk;
 		writebuf[write_pos++] = ra;
-		if(write_pos >= (BUFSIZE)) {
+//		writelen = (uint8_t)ra;
+//		havewrite++;
+		if(write_pos >= (WRITEBUFSIZE)) {
 			write_pos = 0;
 			printf("rolling over writebuf position\n");
 		}
@@ -310,6 +507,7 @@ void EINT0_IRQHandler(void)
 static void begin_transfer(void)
 {
 	int i, j;
+	int decodelen = 0;
 
 	printf("beginning transfer...\r\n");
 
@@ -318,24 +516,27 @@ static void begin_transfer(void)
 	bytes = 1;
 	needbyte = 0;
 	count = 7;
-	catchwrites = 0;
+//	havewrite = 0;
+//	writelen = 0;
 	
 	write_num = 0;
 	write_pos = 0;
 
-
 	while(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
 		if(IS_WRITE()) {
-			int ra, sr;
-			int oldPA15 = 0;
+			int len = 0;
 
-			catchwrites = 1;
-			write_diskpos[write_num] = bytes;
+			writes[write_num].diskpos = bytes;
+			writes[write_num].rawstart = write_pos;
 			TIMER0->TCSR = TIMER_TCSR_CRST_Msk;
-			TIMER0->TCSR = TIMER_CONTINUOUS_MODE | 7 | TIMER_TCSR_TDR_EN_Msk;
 			TIMER0->TCMPR = 0xFFFFFF;
-			TIMER0->TCSR |= TIMER_TCSR_CEN_Msk;
+			TIMER0->TCSR = TIMER_CONTINUOUS_MODE | 7 | TIMER_TCSR_TDR_EN_Msk | TIMER_TCSR_CEN_Msk;
+			decode(0,0,0,0);
 			while(IS_WRITE()) {
+/*				if(havewrite) {
+					havewrite = 0;
+					decode(decodebuf + decodelen,raw_to_raw03_byte(writelen),DECODEBUFSIZE,&len);
+				}*/
 				if(needbyte) {
 					needbyte = 0;
 					flash_read_disk((uint8_t*)&data2,1);
@@ -346,8 +547,12 @@ static void begin_transfer(void)
 					}
 				}
 			}
-			write_bufend[write_num++] = write_pos;
-			catchwrites = 0;
+			TIMER0->TCSR = TIMER_TCSR_CRST_Msk;
+			writes[write_num].decstart = decodelen;
+			writes[write_num].decend = decodelen + len;
+			decodelen += len;
+			writes[write_num].rawend = write_pos;
+			write_num++;
 		}
 		if(needbyte) {
 			needbyte = 0;
@@ -361,24 +566,95 @@ static void begin_transfer(void)
 	}
 	flash_read_disk_stop();
 	
-	if(write_pos) {
+	if(write_num) {
+		int decode_len = 0;
+
 		printf("write_pos = %d\n",write_pos);
 		raw_to_raw03(writebuf,write_pos);
+		
+		//decode the written data
 		for(i=0;i<write_num;i++) {
-			int start = (i == 0 ? 0 : write_bufend[i - 1]);
-			int size = write_bufend[i] - start;
+			int start = writes[i].rawstart;
+			int end = writes[i].rawend;
+			int size = end - start;
+			int len;
 
-			printf("--write %d started at diskpos %d, end in buffer at %d (started at %d, size = %d)\n",i,write_diskpos[i],write_bufend[i],start,size);
-/*			for(j=0;j<size;j+=8) {
-				printf("  %x %x %x %x %x %x %x %x\n",writebuf[j+0],writebuf[j+1],writebuf[j+2],writebuf[j+3],writebuf[j+4],writebuf[j+5],writebuf[j+6],writebuf[j+7]);
-			}*/
-//			prev = 0;
-//			for(i=0;i<numwrites;i++) {
-				printf("decoding write: start %d, size %d\r\n",start,size);
-				decode_write(decodebuf,writebuf + start,write_diskpos[i],size);
-				hexdump("block--",decodebuf,size);
-//				prev = writepos2[i];
+			printf("--write %d started at diskpos %d, writebuf start, end = %d, %d (%d bytes)\n",i,writes[i].diskpos,start,end,size);
+//			for(j=0;j<size;j+=8) {
+//				printf("  %x %x %x %x %x %x %x %x\n",writebuf[j+0],writebuf[j+1],writebuf[j+2],writebuf[j+3],writebuf[j+4],writebuf[j+5],writebuf[j+6],writebuf[j+7]);
 //			}
+//			printf("decoding write: start %d, size %d\r\n",start,size);
+			len = decode_write(decodebuf + decode_len,writebuf + start,decode_len,size);
+			writes[i].decstart = decode_len;
+			writes[i].decend = decode_len + len;
+			decode_len += len;
+			{
+//				uint8_t writelen = 
+				for(j=0;j<2048;j++) {
+					decodebuf2[j] = 0;
+				}
+
+				for(j=0;j<size;j++) {
+					decode(decodebuf2 + decodelen,writebuf[start + j],DECODEBUFSIZE,&len);
+				}
+				printf("--write %d decodebuf2 len = %d\n",i,len);
+
+				decodelen += len;
+			}
+		}
+		hexdump("--decodebuf",decodebuf,256);
+		hexdump("--decodebuf2",decodebuf2,256);
+
+/*		for(i=0;i<write_num;i++) {
+			hexdump("block--",decodebuf,256);
+		}*/
+//		hexdump("--decodebuf",decodebuf,256);
+
+		//erase the working block
+//		flash_copy_block(0xF);
+
+		//write the written data to flash
+		for(i=0;i<write_num;i++) {
+			int pos = writes[i].diskpos + 256;
+			int start = writes[i].decstart;
+			int end = writes[i].decend;
+			int size = (end - start) + 122 + 40;
+			int sector = pos >> 12;
+			int sectoraddr = pos & 0xFFF;
+			uint8_t *ptr;
+			uint8_t *decodeptr = decodebuf + start;
+
+			ptr = writebuf + 4096;
+			for(j=0;j<121;j++) {
+				*ptr++ = 0;
+			}
+			*ptr++ = 0x80;
+			for(j=0;j<(end - start);j++) {
+				*ptr++ = *decodeptr++;
+			}
+			for(j=0;j<40;j++) {
+				*ptr++ = 0;
+			}
+			decodeptr = writebuf + 4096;
+			printf("writing to flash: diskpos %d, size %d, sector = %d, sectoraddr = %X\r\n",pos,size,sector,sectoraddr);
+/*			flash_read_sector(diskblock,sector,writebuf);
+			printf("dumping from %d\n",sectoraddr - 10);
+			hexdump("sector",(writebuf + sectoraddr) - 10,256);
+			ptr = writebuf + sectoraddr;
+			for(j=sectoraddr;j<4096 && size;j++, size--) {
+				*ptr++ = *decodeptr++;
+			}
+			flash_write_sector(diskblock,sector,writebuf);
+			if(size) {
+				printf("write spans two sectors...\n");
+				sector++;
+				flash_read_sector(diskblock,sector,writebuf);
+				ptr = writebuf;
+				for(;size;size--) {
+					*ptr++ = *decodeptr++;
+				}
+				flash_write_sector(diskblock,sector,writebuf);
+			}*/
 		}
 	}
 	printf("transferred %d bytes\r\n",bytes);
