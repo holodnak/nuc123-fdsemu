@@ -47,7 +47,7 @@ void TMR1_IRQHandler(void)
 }
 
 #define WRITEBUFSIZE	(1024 * 8)
-#define DECODEBUFSIZE	(1024 * 2)
+#define DECODEBUFSIZE	(1024 * 8)
 
 uint8_t writebuf[WRITEBUFSIZE];
 uint8_t decodebuf[DECODEBUFSIZE];
@@ -341,6 +341,7 @@ __inline void decode(uint8_t *dst, uint8_t src, int dstSize, int *len) {
 	
 	//finished decoding block, check crc
 	else if(state == 2) {
+		out = (out / 8) - 2;
 		if(calc_crc(dst,blockSize+2)) {
 			uint16_t crc1=(dst[out+1]<<8)|dst[out];
 			uint16_t crc2;
@@ -480,10 +481,10 @@ static int decode_write(uint8_t *decbuf,uint8_t *buf,int pos, int size)
 	return(len);
 }
 
-//uint8_t writelen;
-//int havewrite;
+uint8_t writelen;
+int havewrite;
 
-uint8_t decodebuf2[1024 * 2];
+//uint8_t decodebuf2[1024 * 2];
 
 void EINT0_IRQHandler(void)
 {
@@ -495,8 +496,8 @@ void EINT0_IRQHandler(void)
 		TIMER0->TCSR = TIMER_TCSR_CRST_Msk;
 		TIMER0->TCSR = TIMER_CONTINUOUS_MODE | 7 | TIMER_TCSR_TDR_EN_Msk | TIMER_TCSR_CEN_Msk;
 		writebuf[write_pos++] = ra;
-//		writelen = (uint8_t)ra;
-//		havewrite++;
+		writelen = (uint8_t)ra;
+		havewrite++;
 		if(write_pos >= (WRITEBUFSIZE)) {
 			write_pos = 0;
 			printf("rolling over writebuf position\n");
@@ -516,12 +517,16 @@ static void begin_transfer(void)
 	bytes = 1;
 	needbyte = 0;
 	count = 7;
-//	havewrite = 0;
-//	writelen = 0;
+	havewrite = 0;
+	writelen = 0;
 	
 	write_num = 0;
 	write_pos = 0;
 
+	
+	for(i=0;i<DECODEBUFSIZE;i++) {
+		decodebuf[i] = 0;
+	}
 	while(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
 		if(IS_WRITE()) {
 			int len = 0;
@@ -533,10 +538,10 @@ static void begin_transfer(void)
 			TIMER0->TCSR = TIMER_CONTINUOUS_MODE | 7 | TIMER_TCSR_TDR_EN_Msk | TIMER_TCSR_CEN_Msk;
 			decode(0,0,0,0);
 			while(IS_WRITE()) {
-/*				if(havewrite) {
+				if(havewrite) {
 					havewrite = 0;
 					decode(decodebuf + decodelen,raw_to_raw03_byte(writelen),DECODEBUFSIZE,&len);
-				}*/
+				}
 				if(needbyte) {
 					needbyte = 0;
 					flash_read_disk((uint8_t*)&data2,1);
@@ -550,6 +555,7 @@ static void begin_transfer(void)
 			TIMER0->TCSR = TIMER_TCSR_CRST_Msk;
 			writes[write_num].decstart = decodelen;
 			writes[write_num].decend = decodelen + len;
+//			printf("finished write %d, start = %d, end = %d (len = %d)\r\n",write_num,decodelen,decodelen + len,len);
 			decodelen += len;
 			writes[write_num].rawend = write_pos;
 			write_num++;
@@ -567,11 +573,15 @@ static void begin_transfer(void)
 	flash_read_disk_stop();
 	
 	if(write_num) {
-		int decode_len = 0;
+/*		int decode_len = 0;
 
 		printf("write_pos = %d\n",write_pos);
 		raw_to_raw03(writebuf,write_pos);
 		
+		for(j=0;j<2048;j++) {
+			decodebuf2[j] = 0;
+		}
+
 		//decode the written data
 		for(i=0;i<write_num;i++) {
 			int start = writes[i].rawstart;
@@ -590,10 +600,6 @@ static void begin_transfer(void)
 			decode_len += len;
 			{
 //				uint8_t writelen = 
-				for(j=0;j<2048;j++) {
-					decodebuf2[j] = 0;
-				}
-
 				for(j=0;j<size;j++) {
 					decode(decodebuf2 + decodelen,writebuf[start + j],DECODEBUFSIZE,&len);
 				}
@@ -604,7 +610,7 @@ static void begin_transfer(void)
 		}
 		hexdump("--decodebuf",decodebuf,256);
 		hexdump("--decodebuf2",decodebuf2,256);
-
+*/
 /*		for(i=0;i<write_num;i++) {
 			hexdump("block--",decodebuf,256);
 		}*/
@@ -637,7 +643,7 @@ static void begin_transfer(void)
 			}
 			decodeptr = writebuf + 4096;
 			printf("writing to flash: diskpos %d, size %d, sector = %d, sectoraddr = %X\r\n",pos,size,sector,sectoraddr);
-/*			flash_read_sector(diskblock,sector,writebuf);
+			flash_read_sector(diskblock,sector,writebuf);
 			printf("dumping from %d\n",sectoraddr - 10);
 			hexdump("sector",(writebuf + sectoraddr) - 10,256);
 			ptr = writebuf + sectoraddr;
@@ -654,7 +660,7 @@ static void begin_transfer(void)
 					*ptr++ = *decodeptr++;
 				}
 				flash_write_sector(diskblock,sector,writebuf);
-			}*/
+			}
 		}
 	}
 	printf("transferred %d bytes\r\n",bytes);
