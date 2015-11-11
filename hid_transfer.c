@@ -12,6 +12,7 @@
 #include "NUC123.h"
 #include "hid_transfer.h"
 #include "flash.h"
+#include "spiutil.h"
 
 uint8_t volatile g_u8EP2Ready = 0;
 
@@ -240,35 +241,30 @@ uint8_t size;
 uint8_t holdcs,initcs;
 uint32_t addr;
 
-void process_send_feature()
+void process_send_feature(uint8_t *usbdata,int len)
 {
-	volatile uint8_t *buf = (uint8_t*)(USBD_BUF_BASE + USBD_GET_EP_BUF_ADDR(EP1));
+	uint8_t *buf = epdata;
 	uint8_t reportid;
+
+    USBD_MemCopy((uint8_t *)buf, usbdata, len);
 
 	reportid = buf[0];
 	size = buf[1];
-	holdcs = buf[2];
-	initcs = buf[3];
+	initcs = buf[2];
+	holdcs = buf[3];
 
 //	hexdump("process_send_feature: buf",buf,64);
 
 	//spi write
 	if(reportid == ID_SPI_WRITE) {
-		switch(buf[4]) {
-			case CMD_READID:
-				flash_get_id(usbbuf);
-				printf("CMD_READID\n");
-				usbbuflen = 3;
-				break;
-			case CMD_READDATA:
-				addr = buf[3 + 4] | (buf[2 + 4] << 8) | (buf[1 + 4] << 16);
-				printf("CMD_READDATA: size = %d, hold,init = %d,%d, addr = $%X\n",size,holdcs,initcs,addr);
-				flash_read_start(addr);
-				usbbuflen = 1;
-				break;
-			default:
-				printf("ID_SPI_WRITE: unknown command $%X\n",buf[4]);
-				break;
+		printf("process_send_feature: ID_SPI_WRITE: init,hold = %d,%d : len = %d\n",initcs,holdcs,size);
+		if(initcs) {
+			spi_deselect_device(SPI_FLASH, 0);
+			spi_select_device(SPI_FLASH, 0);
+		}
+		spi_write_packet(SPI_FLASH,buf + 4,size);
+		if(holdcs == 0) {
+			spi_deselect_device(SPI_FLASH, 0);
 		}
 	}
 	
@@ -276,7 +272,7 @@ void process_send_feature()
 	else if(reportid == ID_SPI_READ) {
 		switch(buf[4]) {
 			default:
-				printf("ID_SPI_READ: unknown command $%X\n",buf[4]);
+				printf("process_send_feature: ID_SPI_READ: unknown command $%X\n",buf[4]);
 				break;
 		}
 	}
@@ -285,9 +281,12 @@ void process_send_feature()
 	else if(reportid == ID_SPI_READ_STOP) {
 		switch(buf[4]) {
 			default:
-				printf("ID_SPI_READ_STOP: unknown command $%X\n",buf[4]);
+				printf("process_send_feature: ID_SPI_READ_STOP: unknown command $%X\n",buf[4]);
 				break;
 		}
+	}
+	else {
+		printf("process_send_feature: unknown reportid $%X\n",reportid);
 	}
 }
 
@@ -295,17 +294,19 @@ void get_feature_report(uint8_t reportid, int len)
 {
 	static int readstarted = 0;
 
+	usbbuflen = len;
+
 	//spi read
 	if(reportid == ID_SPI_READ) {
-		len--;
-		flash_read(usbbuf,usbbuflen);
+		spi_read_packet(SPI_FLASH, usbbuf, len);
 		printf("get_feature_report: ID_SPI_READ: len = %d\n",len);
 	}
 
 	//spi read stop
 	else if(reportid == ID_SPI_READ_STOP) {
-		printf("get_feature_report: ID_SPI_READ_STOP\n");
-		usbbuflen = 0;
+		spi_read_packet(SPI_FLASH, usbbuf, len);
+		spi_deselect_device(SPI_FLASH, 0);
+		printf("get_feature_report: ID_SPI_READ_STOP: len = %d\n",len);
 	}
 	
 	else {
@@ -330,14 +331,12 @@ void HID_ClassRequest(void)
         {
             case GET_REPORT:
                 if(buf[3] == 3) {
-//					hexdump("get feature",buf,8);
-//					flash_get_id(ptr + 1);
-					get_feature_report(buf[2],64);
+					get_feature_report(buf[2],63);
 					ptr[0] = buf[2];
-					memcpy(ptr+1,usbbuf,63);
+					memcpy(ptr + 1,usbbuf,63);
 					USBD_SET_DATA1(EP0);
 					USBD_SET_PAYLOAD_LEN(EP0, 64);
-//					buf[0] = buf[1] = buf[2] = buf[3] = 0xA5;
+					USBD_PrepareCtrlOut(0, 0);
 					break;
 				}
 //             {
@@ -350,7 +349,6 @@ void HID_ClassRequest(void)
                 break;
             }
         }
-		USBD_PrepareCtrlOut(0,0);
     }
     else
     {
@@ -362,19 +360,28 @@ void HID_ClassRequest(void)
             {
                 if(buf[3] == 3)
                 {
-					hexdump("set feature",buf,8);
-                    /* Request Type = Feature */
+/*
+//					hexdump("set feature",buf,8);
+					hexdump("ptr",ptr,64);
+                    // Request Type = Feature
                     USBD_SET_DATA1(EP1);
                     USBD_SET_PAYLOAD_LEN(EP1, 64);
-					hexdump("ptr",ptr,64);
-					USBD_MemCopy(epdata,ptr,64);
+//					USBD_MemCopy(epdata,ptr,64);
 					for(i=0;i<64;i++) {
 						*ptr2++ = *ptr++;
 					}
-//					hexdump("epdata",epdata,64);
+					hexdump("epdata",epdata,64);
 //					hexdump("ptr",ptr,64);
 					process_send_feature();
                     USBD_PrepareCtrlIn(0, 0);
+*/
+					USBD_SET_DATA1(EP1);
+					USBD_SET_PAYLOAD_LEN(EP1, 64);
+					//sometimes the data isnt ready??
+					hexdump("ptr",ptr,64);
+					hexdump("ptr",ptr,64);
+					process_send_feature(ptr,USBD_GET_PAYLOAD_LEN(EP1));
+					USBD_PrepareCtrlIn(0, 0);
                 }
                 break;
             }

@@ -3,8 +3,6 @@
 #include "flash.h"
 #include "spiutil.h"
 
-#define SPI_FLASH	SPI0
-
 typedef struct flashchip_s {
 	uint8_t manufacturer, device;
 	int size;
@@ -41,6 +39,7 @@ void flash_get_id(uint8_t *buf)
 
 void flash_init(void)
 {
+	flash_reset();
 	flash_get_id(data);
 	printf("--flash manufacturer id: $%02X, device id: $%04X\r\n",data[0],(data[1] << 8) | data[2]);
 }
@@ -71,6 +70,7 @@ void flash_read_start(uint32_t addr)
 	data[3] = (uint8_t)(addr);
 	spi_select_device(SPI_FLASH, 0);
 	spi_write_packet(SPI_FLASH, data, 4);
+	printf("flash_read_start: addr = $%08X\n",addr);
 }
 
 void flash_read_stop(void)
@@ -81,6 +81,7 @@ void flash_read_stop(void)
 void flash_read(uint8_t *buf,int len)
 {
 	spi_read_packet(SPI_FLASH, buf, len);
+//	hexdump("spiread",buf,len);
 }
 
 void flash_read_disk_header(int block,flash_header_t *header)

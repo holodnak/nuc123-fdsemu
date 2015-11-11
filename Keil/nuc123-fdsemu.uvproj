@@ -509,6 +509,11 @@
               <FileType>1</FileType>
               <FilePath>..\Library\StdDriver\src\usbd.c</FilePath>
             </File>
+            <File>
+              <FileName>crc.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Library\StdDriver\src\crc.c</FilePath>
+            </File>
           </Files>
         </Group>
       </Groups>

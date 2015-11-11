@@ -1,6 +1,8 @@
 #ifndef __flash_h__
 #define __flash_h__
 
+#define SPI_FLASH	SPI0
+
 typedef struct flash_header_s {
     char		name[240];			//null terminated ascii string
 	uint16_t	next_disk;		//block number of next disk (after this one, for dual sided game or games with two disks)

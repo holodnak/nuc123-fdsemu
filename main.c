@@ -269,16 +269,11 @@ static void console_tick(void)
 			}
 			break;
 		case 't':
-//			flash_test();
+			flash_init();
 			sram_test(0);
 //			memcheck();
 			break;
 		case 'd':
-		{
-			char buf[256];
-			flash_read_page((diskblock << 8) | 0xF,buf);
-			hexdump("disk + 3590",buf,256);
-		}
  			break;
 		case 'c':
 			flash_copy_block(0xC,1);

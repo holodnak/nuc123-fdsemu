@@ -10,7 +10,7 @@ static int test_page(int page, int ss)
 	uint8_t data_write[4];
 	uint8_t data_read[4];
 	uint8_t test_data[256];
-	int i;
+	int i, maxerr = 3, errors = 0;
 
 	data_write[0] = 0x02;
 	data_read[0] = 0x03;
@@ -36,8 +36,11 @@ static int test_page(int page, int ss)
 
 	for(i=0;i<256;i++) {
 		if(test_data[i] != (uint8_t)(i)) {
-			printf("sram test failed at byte %d.\r\n",i + (page * 256));
-			return(1);
+			printf("sram test failed at byte %d. (wanted $%02X, got $%02X)\r\n",i + (page * 256),(uint8_t)i,test_data[i]);
+			errors++;
+			if(errors >= maxerr) {
+				return(errors);
+			}
 		}
 	}
 	printf("sram%d test passed\n",ss);

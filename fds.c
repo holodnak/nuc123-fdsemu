@@ -509,12 +509,11 @@ static void begin_transfer(void)
 {
 	int i, j;
 	int decodelen = 0;
+	int leadin = 28300;
 
 	printf("beginning transfer...\r\n");
 
 	flash_read_disk_start(diskblock);
-	flash_read_disk((uint8_t*)&data2,1);
-	bytes = 1;
 	needbyte = 0;
 	count = 7;
 	havewrite = 0;
@@ -529,11 +528,33 @@ static void begin_transfer(void)
 	}
 
 
+    NVIC_DisableIRQ(USBD_IRQn);
     NVIC_EnableIRQ(TMR1_IRQn);
 	
 	TIMER_Start(TIMER0);
 	TIMER_Start(TIMER1);
 
+	bytes = 0;
+	needbyte = 0;
+	count = 7;
+	havewrite = 0;
+	writelen = 0;
+
+	//transfer lead-in
+	while(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
+		if(needbyte) {
+			needbyte = 0;
+			data2 = 0;
+			leadin -= 8;
+			if(leadin <= 0) {
+				flash_read_disk((uint8_t*)&data2,1);
+				bytes++;
+				break;
+			}
+		}
+	}
+
+	//transfer disk data
 	while(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
 		if(IS_WRITE()) {
 			int len = 0;
@@ -578,6 +599,7 @@ static void begin_transfer(void)
 		}
 	}
     NVIC_DisableIRQ(TMR1_IRQn);
+    NVIC_EnableIRQ(USBD_IRQn);
 	TIMER_Stop(TIMER0);
 	TIMER_Stop(TIMER1);
 
