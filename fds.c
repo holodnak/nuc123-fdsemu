@@ -527,6 +527,13 @@ static void begin_transfer(void)
 	for(i=0;i<DECODEBUFSIZE;i++) {
 		decodebuf[i] = 0;
 	}
+
+
+    NVIC_EnableIRQ(TMR1_IRQn);
+	
+	TIMER_Start(TIMER0);
+	TIMER_Start(TIMER1);
+
 	while(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
 		if(IS_WRITE()) {
 			int len = 0;
@@ -570,6 +577,10 @@ static void begin_transfer(void)
 			}
 		}
 	}
+    NVIC_DisableIRQ(TMR1_IRQn);
+	TIMER_Stop(TIMER0);
+	TIMER_Stop(TIMER1);
+
 	flash_read_disk_stop();
 	
 	if(write_num) {

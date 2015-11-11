@@ -30,18 +30,19 @@ static void flash_busy_wait(void)
 	spi_deselect_device(SPI_FLASH, 0);
 }
 
+void flash_get_id(uint8_t *buf)
+{
+	data[0] = 0x9F;
+	spi_select_device(SPI_FLASH, 0);
+	spi_write_packet(SPI_FLASH, data, 1);
+	spi_read_packet(SPI_FLASH, buf, 3);
+	spi_deselect_device(SPI_FLASH, 0);
+}
+
 void flash_init(void)
 {
-	data[0] = 0x90;
-	data[1] = 0x00;
-	data[2] = 0x00;
-	data[3] = 0x00;
-	spi_select_device(SPI_FLASH, 0);
-	spi_write_packet(SPI_FLASH, data, 4);
-	spi_read_packet(SPI_FLASH, data, 2);
-	spi_deselect_device(SPI_FLASH, 0);
-
-	printf("--flash manufacturer id: $%02X, device id: $%02X\r\n",data[0],data[1]);
+	flash_get_id(data);
+	printf("--flash manufacturer id: $%02X, device id: $%04X\r\n",data[0],(data[1] << 8) | data[2]);
 }
 
 void flash_reset(void)
@@ -57,6 +58,29 @@ void flash_reset(void)
 	spi_select_device(SPI_FLASH, 0);
 	spi_write_packet(SPI_FLASH, data, 1);
 	spi_deselect_device(SPI_FLASH, 0);
+}
+
+void flash_read_start(uint32_t addr)
+{
+	uint8_t data[4];
+
+	//read data
+	data[0] = 0x03;
+	data[1] = (uint8_t)(addr >> 16);
+	data[2] = (uint8_t)(addr >> 8);
+	data[3] = (uint8_t)(addr);
+	spi_select_device(SPI_FLASH, 0);
+	spi_write_packet(SPI_FLASH, data, 4);
+}
+
+void flash_read_stop(void)
+{
+	spi_deselect_device(SPI_FLASH, 0);
+}
+
+void flash_read(uint8_t *buf,int len)
+{
+	spi_read_packet(SPI_FLASH, buf, len);
 }
 
 void flash_read_disk_header(int block,flash_header_t *header)

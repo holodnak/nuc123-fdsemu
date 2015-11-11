@@ -454,6 +454,16 @@
               <FileType>1</FileType>
               <FilePath>..\sram.c</FilePath>
             </File>
+            <File>
+              <FileName>descriptors.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\descriptors.c</FilePath>
+            </File>
+            <File>
+              <FileName>hid_transfer.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\hid_transfer.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -493,6 +503,11 @@
               <FileName>gpio.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\Library\StdDriver\src\gpio.c</FilePath>
+            </File>
+            <File>
+              <FileName>usbd.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Library\StdDriver\src\usbd.c</FilePath>
             </File>
           </Files>
         </Group>

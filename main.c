@@ -13,6 +13,7 @@
 #include "flash.h"
 #include "sram.h"
 #include "fds.h"
+#include "hid_transfer.h"
 
 #define HCLK_CLOCK           72000000
 
@@ -314,10 +315,23 @@ int main()
     TIMER_EnableCaptureInt(TIMER2);*/
 
     /* Enable Timer1 NVIC */
-    NVIC_EnableIRQ(TMR1_IRQn);
+//    NVIC_EnableIRQ(TMR1_IRQn);
 	
-	TIMER_Start(TIMER0);
-	TIMER_Start(TIMER1);
+//	TIMER_Start(TIMER0);
+//	TIMER_Start(TIMER1);
+
+	/* Open USB controller */
+    USBD_Open(&gsInfo, HID_ClassRequest, NULL);
+
+    /*Init Endpoint configuration for HID */
+    HID_Init();
+
+    /* Start USB device */
+    USBD_Start();
+
+    /* Enable USB device interrupt */
+    NVIC_EnableIRQ(USBD_IRQn);
+
 
     printf("\n\nnuc123-fdsemu started.\n");
     printf("--CPU @ %d MHz\n", SystemCoreClock / 1000000);

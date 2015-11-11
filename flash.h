@@ -10,8 +10,14 @@ typedef struct flash_header_s {
 //    uint8_t		data[0xff00];	//disk data, beginning with lead in
 } flash_header_t;
 
+void flash_get_id(uint8_t *buf);
 void flash_init(void);
 void flash_reset(void);
+
+void flash_read_start(uint32_t addr);
+void flash_read_stop(void);
+void flash_read(uint8_t *buf,int len);
+
 void flash_read_disk_header(int block,flash_header_t *header);
 void flash_read_disk_start(int block);
 void flash_read_disk_stop(void);
