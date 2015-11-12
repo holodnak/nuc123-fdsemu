@@ -32,7 +32,7 @@ void TMR1_IRQHandler(void)
 	TIMER_ClearIntFlag(TIMER1);
 
 	rate ^= 1;
-	PA10 = rate;
+	//PA10 = rate;
 	if(rate) {
 		count++;
 		if(count == 8) {
@@ -42,8 +42,9 @@ void TMR1_IRQHandler(void)
 		}
 		outbit = data & 1;
 		data >>= 1;
-		PA11 = outbit;
+		//PA11 = outbit;
 	}
+	PA11 = (outbit ^ rate) & 1;
 }
 
 #define DECODEBUFSIZE	(1024 * 12)
@@ -166,8 +167,8 @@ static void begin_transfer(void)
 
 
     NVIC_DisableIRQ(USBD_IRQn);
-    NVIC_EnableIRQ(TMR1_IRQn);
-	
+    NVIC_EnableIRQ(EINT0_IRQn);
+    NVIC_EnableIRQ(TMR1_IRQn);	
 	TIMER_Start(TIMER0);
 	TIMER_Start(TIMER1);
 
@@ -234,10 +235,11 @@ static void begin_transfer(void)
 			}
 		}
 	}
+    NVIC_DisableIRQ(EINT0_IRQn);
     NVIC_DisableIRQ(TMR1_IRQn);
-    NVIC_EnableIRQ(USBD_IRQn);
 	TIMER_Stop(TIMER0);
 	TIMER_Stop(TIMER1);
+    NVIC_EnableIRQ(USBD_IRQn);
 
 	flash_read_disk_stop();
 	

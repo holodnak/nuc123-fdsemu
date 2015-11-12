@@ -101,17 +101,13 @@ void SYS_Init(void)
     GPIO_SetMode(PD, BIT1, GPIO_PMD_OUTPUT);
     GPIO_SetMode(PD, BIT0, GPIO_PMD_OUTPUT);
 
-    GPIO_SetMode(PA, BIT12,GPIO_PMD_INPUT);
-
-	GPIO_SetMode(PA, BIT10, GPIO_PMD_OUTPUT);
     GPIO_SetMode(PA, BIT11, GPIO_PMD_OUTPUT);
-//    GPIO_SetMode(PA, BIT15, GPIO_PMD_INPUT);
-//    GPIO_SetMode(PB, BIT14, GPIO_PMD_INPUT);
+    GPIO_SetMode(PA, BIT12,GPIO_PMD_INPUT);
+//    GPIO_SetMode(PA, BIT13,GPIO_PMD_INPUT);
 
-    /* Configure PB.14 as EINT0 pin and enable interrupt by falling edge trigger */
+    /* Configure PB.14 as EINT0 pin and enable interrupt by rising edge trigger */
     GPIO_SetMode(PB, BIT14, GPIO_PMD_INPUT);
     GPIO_EnableEINT0(PB, 14, GPIO_INT_RISING);
-    NVIC_EnableIRQ(EINT0_IRQn);
 
     /* Enable interrupt de-bounce function and select de-bounce sampling cycle time is 1024 clocks of LIRC clock */
 	GPIO_SET_DEBOUNCE_TIME(GPIO_DBCLKSRC_HCLK, GPIO_DBCLKSEL_4);
@@ -295,25 +291,9 @@ int main()
     UART0_Init();
 	SPI_Init();
 
-//    GPIO_SetMode(PB, BIT8, GPIO_PMD_OUTPUT);
-//	PB8 = 0;
-
 	TIMER_Open(TIMER0, TIMER_CONTINUOUS_MODE, 6000000);
 	TIMER_Open(TIMER1, TIMER_PERIODIC_MODE, 96400 * 2);
 	TIMER_EnableInt(TIMER1);
-
-    /* Configure Timer2 setting for external counter input and capture function */
-/*    TIMER_SET_PRESCALE_VALUE(TIMER2, 0);
-    TIMER_SET_CMP_VALUE(TIMER2, FDS_KHZ(HCLK_CLOCK) / 2);
-    TIMER_EnableEventCounter(TIMER2, TIMER_COUNTER_FALLING_EDGE);
-    TIMER_EnableCapture(TIMER2, TIMER_CAPTURE_FREE_COUNTING_MODE, TIMER_CAPTURE_FALLING_EDGE);
-    TIMER_EnableCaptureInt(TIMER2);*/
-
-    /* Enable Timer1 NVIC */
-//    NVIC_EnableIRQ(TMR1_IRQn);
-	
-//	TIMER_Start(TIMER0);
-//	TIMER_Start(TIMER1);
 
 	/* Open USB controller */
     USBD_Open(&gsInfo, HID_ClassRequest, NULL);
