@@ -270,7 +270,7 @@ static void console_tick(void)
 			break;
 		case 't':
 			flash_init();
-			sram_test(0);
+			sram_init();
 //			memcheck();
 			break;
 		case 'd':

@@ -71,8 +71,9 @@ void sram_init_device(int ss)
 	spi_deselect_device(SPI_SRAM, ss);
 	spi_select_device(SPI_SRAM, ss);
 	spi_deselect_device(SPI_SRAM, ss);
+
 	//ensure it is in single io mode
-/*	data[0] = 0xFF;
+	data[0] = 0xFF;
 	spi_select_device(SPI_SRAM, ss);
 	spi_write_packet(SPI_SRAM, data, 1);
 	spi_deselect_device(SPI_SRAM, ss);
@@ -83,7 +84,7 @@ void sram_init_device(int ss)
 	spi_select_device(SPI_SRAM, ss);
 	spi_write_packet(SPI_SRAM, data, 2);
 	spi_deselect_device(SPI_SRAM, ss);
-*/
+
 	//read back mode register
 	data[0] = 0x05;
 	spi_select_device(SPI_SRAM, ss);
