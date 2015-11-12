@@ -299,14 +299,14 @@ void get_feature_report(uint8_t reportid, int len)
 	//spi read
 	if(reportid == ID_SPI_READ) {
 		spi_read_packet(SPI_FLASH, usbbuf, len);
-		printf("get_feature_report: ID_SPI_READ: len = %d\n",len);
+//		printf("get_feature_report: ID_SPI_READ: len = %d\n",len);
 	}
 
 	//spi read stop
 	else if(reportid == ID_SPI_READ_STOP) {
 		spi_read_packet(SPI_FLASH, usbbuf, len);
 		spi_deselect_device(SPI_FLASH, 0);
-		printf("get_feature_report: ID_SPI_READ_STOP: len = %d\n",len);
+//		printf("get_feature_report: ID_SPI_READ_STOP: len = %d\n",len);
 	}
 	
 	else {

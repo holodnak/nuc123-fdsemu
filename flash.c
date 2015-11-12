@@ -202,6 +202,7 @@ void flash_copy_block(int src,int dest)
 		flash_read_page(i + src,buf);
 		flash_write_page(i + dest,buf);
 	}
+	printf("flash_copy_block: copied %X to %X\n",src >> 8,dest >> 8);
 }
 
 void flash_erase_block(int block)

@@ -46,10 +46,10 @@ void TMR1_IRQHandler(void)
 	}
 }
 
-#define WRITEBUFSIZE	(1024 * 8)
-#define DECODEBUFSIZE	(1024 * 8)
+//#define WRITEBUFSIZE	(1024 * 8)
+#define DECODEBUFSIZE	(1024 * 12)
 
-uint8_t writebuf[WRITEBUFSIZE];
+uint8_t sectorbuf[4096];
 uint8_t decodebuf[DECODEBUFSIZE];
 
 struct write_s {
@@ -64,7 +64,7 @@ struct write_s {
 //int write_diskpos[8];		//position on disk the write starts at
 //int write_len[8];			//length of decoded data
 int write_num;				//number of writes
-int write_pos;				//position in buffer for writes
+//int write_pos;				//position in buffer for writes
 
 
 
@@ -249,6 +249,46 @@ static int block_decode(uint8_t *dst, uint8_t *src, int *inP, int *outP, int src
 	return blockSize + 2;
 }
 
+__inline void decode2(uint8_t *dst, uint8_t src, int dstSize, int *outptr) {
+	static int foundstart = 0;
+	static char bitval;
+	int out = *outptr;
+
+	if(dst == 0) {
+		foundstart = 0;
+		bitval = 0;
+		return;
+	}
+/*	if(foundstart == 0 && src == 1) {
+		foundstart = 1;
+		dst[out / 8] = 0x80;
+		*outptr = ((out / 8) + 1) * 8;
+		return;
+	}*/
+	switch(src | (bitval << 4)) {
+		case 0x11:
+			out++;
+		case 0x00:
+			out++;
+			bitval=0;
+			break;
+		case 0x12:
+			out++;
+		case 0x01:
+		case 0x10:
+			dst[out/8] |= 1 << (out & 7);
+			out++;
+			bitval=1;
+			break;
+		default: //Unexpected value.  Keep going, we'll probably get a CRC warning
+//				printf("glitch(%d) @ %X(%X.%d)\n", src[in], in, out/8, out%8);
+			out++;
+			bitval=0;
+			break;
+	}
+	*outptr = out;
+}
+
 __inline void decode(uint8_t *dst, uint8_t src, int dstSize, int *len) {
 /*	int start;
 	int blocktypefound = 0;
@@ -359,102 +399,6 @@ __inline void decode(uint8_t *dst, uint8_t src, int dstSize, int *len) {
 		}
 		state = 0;
 	}
-/*
-	//scan for gap end
-	for(zeros=0; src[in]!=1 || zeros<MIN_GAP_SIZE; in++) {
-		if(src[in] == 1)
-			break;
-		if(src[in]==0) {
-			zeros++;
-			} else {
-//			printf("zero counter reset at %d (src[in] = %d)\r\n",in,src[in]);
-			zeros=0;
-		}
-		if(in>=srcSize-2) {
-			printf("failed to find gap end, in = %d, srcsize = %d\r\n",in,srcSize);
-			return 0;
-		}
-	}
-	printf("found gap end at %d, srcSize = %d, outEnd = %d\r\n",in,srcSize,outEnd);
-
-	start=in;
-
-	printf("in = %d, srcSize = %d\r\n",in,srcSize);
-
-	bitval=1;
-	in++;
-
-	do {
-		if(in>=srcSize) {   //not necessarily an error, probably garbage at end of disk
-			printf("Disk end\r\n");
-			return 0;
-		}
-		switch(src[in]|(bitval<<4)) {
-			case 0x11:
-				out++;
-			case 0x00:
-				out++;
-				bitval=0;
-				break;
-			case 0x12:
-				out++;
-			case 0x01:
-			case 0x10:
-				dst[out/8] |= 1<<(out&7);
-				out++;
-				bitval=1;
-				break;
-			default: //Unexpected value.  Keep going, we'll probably get a CRC warning
-				printf("glitch(%d) @ %X(%X.%d)\n", src[in], in, out/8, out%8);
-				out++;
-				bitval=0;
-				break;
-		}
-		in++;
-		if((out / 8) > 0 && blocktypefound == 0) {
-			blocktypefound = 1;
-			blockType = dst[0];
-			if(blockType == 2) {
-				blockSize = 2;
-			}
-			if(blockType == 3) {
-				blockSize = 16;
-			}
-			if(blockType == 4) {
-				blockSize = block4Size + 1;
-			}
-			outEnd=(blockSize+2)*8;
-			printf("blocktype is %d, blocksize = %d, outEnd = %d\r\n",blockType,blockSize,outEnd);
-		}
-	} while(out<outEnd);
-
-	out=out/8-2;
-
-	printf("Out%d %X(%X)-%X(%X) (bs=%d, out=%d)\n", blockType, start, *outP, in, out-1,blockSize, out);
-
-	if(calc_crc(dst,blockSize+2)) {
-		uint16_t crc1=(dst[out+1]<<8)|dst[out];
-		uint16_t crc2;
-		dst[out]=0;
-		dst[out+1]=0;
-		crc2=calc_crc(dst,blockSize+2);
-		dst[out] = (uint8_t)(crc1 >> 0);
-		dst[out+1] = (uint8_t)(crc1 >> 8);
-		printf("Bad CRC (%04X!=%04X) (out=%d)\r\n", crc1, crc2, out);
-	}
-
-//	dst[out+2]=0;   //+spare bit
-	*inP=in;
-	*outP=out;
-
-	if(blockType == 3) {
-		block4Size = dst[0xD];
-		block4Size |= dst[0xE] << 8;
-	}
-
-	return blockSize + 2;
-	*/
-	return;
 }
 
 /*
@@ -495,13 +439,13 @@ void EINT0_IRQHandler(void)
 
 		TIMER0->TCSR = TIMER_TCSR_CRST_Msk;
 		TIMER0->TCSR = TIMER_CONTINUOUS_MODE | 7 | TIMER_TCSR_TDR_EN_Msk | TIMER_TCSR_CEN_Msk;
-		writebuf[write_pos++] = ra;
+//		writebuf[write_pos++] = ra;
 		writelen = (uint8_t)ra;
 		havewrite++;
-		if(write_pos >= (WRITEBUFSIZE)) {
+/*		if(write_pos >= (WRITEBUFSIZE)) {
 			write_pos = 0;
 			printf("rolling over writebuf position\n");
-		}
+		}*/
 	}
 }
 
@@ -520,8 +464,6 @@ static void begin_transfer(void)
 	writelen = 0;
 	
 	write_num = 0;
-	write_pos = 0;
-
 	
 	for(i=0;i<DECODEBUFSIZE;i++) {
 		decodebuf[i] = 0;
@@ -559,16 +501,17 @@ static void begin_transfer(void)
 		if(IS_WRITE()) {
 			int len = 0;
 
-			writes[write_num].diskpos = bytes;
-			writes[write_num].rawstart = write_pos;
+			writes[write_num].diskpos = bytes + 2;
 			TIMER0->TCSR = TIMER_TCSR_CRST_Msk;
 			TIMER0->TCMPR = 0xFFFFFF;
 			TIMER0->TCSR = TIMER_CONTINUOUS_MODE | 7 | TIMER_TCSR_TDR_EN_Msk | TIMER_TCSR_CEN_Msk;
-			decode(0,0,0,0);
+//			decode(0,0,0,0);
+			decode2(0,0,0,0);
 			while(IS_WRITE()) {
 				if(havewrite) {
 					havewrite = 0;
-					decode(decodebuf + decodelen,raw_to_raw03_byte(writelen),DECODEBUFSIZE,&len);
+//					decode(decodebuf + decodelen,raw_to_raw03_byte(writelen),DECODEBUFSIZE,&len);
+					decode2(decodebuf + decodelen,raw_to_raw03_byte(writelen),DECODEBUFSIZE,&len);
 				}
 				if(needbyte) {
 					needbyte = 0;
@@ -581,11 +524,12 @@ static void begin_transfer(void)
 				}
 			}
 			TIMER0->TCSR = TIMER_TCSR_CRST_Msk;
+			len = (len / 8) + 2;
 			writes[write_num].decstart = decodelen;
 			writes[write_num].decend = decodelen + len;
-//			printf("finished write %d, start = %d, end = %d (len = %d)\r\n",write_num,decodelen,decodelen + len,len);
+			printf("finished write %d, start = %d, end = %d (len = %d)\r\n",write_num,decodelen,decodelen + len,len);
 			decodelen += len;
-			writes[write_num].rawend = write_pos;
+//			writes[write_num].rawend = write_pos;
 			write_num++;
 		}
 		if(needbyte) {
@@ -657,13 +601,13 @@ static void begin_transfer(void)
 			int pos = writes[i].diskpos + 256;
 			int start = writes[i].decstart;
 			int end = writes[i].decend;
-			int size = (end - start) + 122 + 40;
+			int size = (end - start);// + 122 + 40;
 			int sector = pos >> 12;
 			int sectoraddr = pos & 0xFFF;
 			uint8_t *ptr;
 			uint8_t *decodeptr = decodebuf + start;
 
-			ptr = writebuf + 4096;
+/*			ptr = writebuf;
 			for(j=0;j<121;j++) {
 				*ptr++ = 0;
 			}
@@ -674,25 +618,27 @@ static void begin_transfer(void)
 			for(j=0;j<40;j++) {
 				*ptr++ = 0;
 			}
-			decodeptr = writebuf + 4096;
-			printf("writing to flash: diskpos %d, size %d, sector = %d, sectoraddr = %X\r\n",pos,size,sector,sectoraddr);
-			flash_read_sector(diskblock,sector,writebuf);
-			printf("dumping from %d\n",sectoraddr - 10);
-			hexdump("sector",(writebuf + sectoraddr) - 10,256);
-			ptr = writebuf + sectoraddr;
+			decodeptr = writebuf;*/
+			printf("writing to flash: diskpos %d, size %d, sector = %d, sectoraddr = %X (decstart = %d, decsize = %d)\r\n",pos,size,sector,sectoraddr,start,size);
+			hexdump("--decodebuf",decodebuf,size);
+			flash_read_sector(diskblock,sector,sectorbuf);
+//			printf("dumping from %d\n",sectoraddr - 10);
+//			hexdump("sector",(writebuf + sectoraddr) - 10,256);
 			for(j=sectoraddr;j<4096 && size;j++, size--) {
-				*ptr++ = *decodeptr++;
+				sectorbuf[j] = *decodeptr++;
 			}
-			flash_write_sector(diskblock,sector,writebuf);
+			flash_write_sector(diskblock,sector,sectorbuf);
 			if(size) {
 				printf("write spans two sectors...\n");
 				sector++;
-				flash_read_sector(diskblock,sector,writebuf);
-				ptr = writebuf;
-				for(;size;size--) {
-					*ptr++ = *decodeptr++;
+				flash_read_sector(diskblock,sector,sectorbuf);
+				for(j=0;j<4096;j++, size--) {
+					sectorbuf[j] = *decodeptr++;
 				}
-				flash_write_sector(diskblock,sector,writebuf);
+				flash_write_sector(diskblock,sector,sectorbuf);
+				if(size) {
+					printf("write spans three sectors!!  D: D: D:\n");
+				}
 			}
 		}
 	}

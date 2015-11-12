@@ -276,7 +276,7 @@ static void console_tick(void)
 		case 'd':
  			break;
 		case 'c':
-			flash_copy_block(0xC,1);
+			flash_copy_block(0xB,0x9);
 			break;
 		}
 	}
