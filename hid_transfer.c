@@ -41,6 +41,9 @@ enum {
     ID_DISK_WRITE,
 };
 
+void process_send_feature(uint8_t *usbdata,int len);
+
+uint8_t epdata[64 + 1];
 
 void USBD_IRQHandler(void)
 {
@@ -118,11 +121,18 @@ void USBD_IRQHandler(void)
 
         if(u32IntSts & USBD_INTSTS_EP1)
         {
+			extern uint8_t g_usbd_SetupPacket[];
             /* Clear event flag */
             USBD_CLR_INT_FLAG(USBD_INTSTS_EP1);
 
             // control OUT
             USBD_CtrlOut();
+			
+			if(g_usbd_SetupPacket[1] == SET_REPORT) {
+				USBD_MemCopy(epdata,(uint8_t*)(USBD_BUF_BASE + USBD_GET_EP_BUF_ADDR(EP1)),64);
+				process_send_feature(epdata,64);
+			}
+			
         }
 
         if(u32IntSts & USBD_INTSTS_EP2)
@@ -223,7 +233,6 @@ void HID_Init(void)
 }
 
 uint8_t usbbuf[64 + 1 + 192];
-uint8_t epdata[64 + 1];
 int usbbuflen;
 
 enum {
@@ -257,7 +266,7 @@ void process_send_feature(uint8_t *usbdata,int len)
 
 	//spi write
 	if(reportid == ID_SPI_WRITE) {
-		printf("process_send_feature: ID_SPI_WRITE: init,hold = %d,%d : len = %d\n",initcs,holdcs,size);
+//		printf("process_send_feature: ID_SPI_WRITE: init,hold = %d,%d : len = %d\n",initcs,holdcs,size);
 		if(initcs) {
 			spi_deselect_device(SPI_FLASH, 0);
 			spi_select_device(SPI_FLASH, 0);
@@ -360,28 +369,9 @@ void HID_ClassRequest(void)
             {
                 if(buf[3] == 3)
                 {
-/*
-//					hexdump("set feature",buf,8);
-					hexdump("ptr",ptr,64);
-                    // Request Type = Feature
-                    USBD_SET_DATA1(EP1);
-                    USBD_SET_PAYLOAD_LEN(EP1, 64);
-//					USBD_MemCopy(epdata,ptr,64);
-					for(i=0;i<64;i++) {
-						*ptr2++ = *ptr++;
-					}
-					hexdump("epdata",epdata,64);
-//					hexdump("ptr",ptr,64);
-					process_send_feature();
-                    USBD_PrepareCtrlIn(0, 0);
-*/
 					USBD_SET_DATA1(EP1);
 					USBD_SET_PAYLOAD_LEN(EP1, 64);
-					//sometimes the data isnt ready??
-					hexdump("ptr",ptr,64);
-					hexdump("ptr",ptr,64);
-					process_send_feature(ptr,USBD_GET_PAYLOAD_LEN(EP1));
-					USBD_PrepareCtrlIn(0, 0);
+                    USBD_PrepareCtrlIn(0, 0);
                 }
                 break;
             }
