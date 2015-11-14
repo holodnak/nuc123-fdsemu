@@ -2,11 +2,6 @@
 
 #define SPI_TIMEOUT		15000
 
-//#define SPI_READ_RX(spi)   		   ((spi)->RX[ssdev])
-//#define SPI_WRITE_TX(spi, u32TxData)   ((spi)->TX[ssdev] = (u32TxData))
-
-static int ssdev = 0;
-
 void spi_init(void)
 {
 }
@@ -54,22 +49,10 @@ int spi_write_packet(SPI_T *spi, uint8_t *data, int len)
 
 void spi_select_device(SPI_T *spi, int ss)
 {
-	ssdev = ss;
-	if(ss == 0) {
-		SPI_SET_SS0_LOW(spi);
-	}
-	else {
-		SPI_SET_SS1_LOW(spi);
-	}
+	SPI_SET_SS0_LOW(spi);
 }
 
 void spi_deselect_device(SPI_T *spi, int ss)
 {
-	ssdev = ss;
-	if(ss == 0) {
-		SPI_SET_SS0_HIGH(spi);
-	}
-	else {
-		SPI_SET_SS1_HIGH(spi);
-	}
+	SPI_SET_SS0_HIGH(spi);
 }

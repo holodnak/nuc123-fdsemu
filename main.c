@@ -134,7 +134,7 @@ void SPI_Init(void)
     /* Configure as a master, clock idle low, 32-bit transaction, drive output on falling clock edge and latch input on rising edge. */
     /* Set IP clock divider. SPI clock rate = 2MHz */
     SPI_Open(SPI0, SPI_MASTER, SPI_MODE_0, 8, 30000000);
-    SPI_Open(SPI1, SPI_MASTER, SPI_MODE_0, 8, 1000000);
+    SPI_Open(SPI1, SPI_MASTER, SPI_MODE_0, 8, 8000000);
 
     /* Enable the automatic hardware slave select function. Select the SS pin and configure as low-active. */
 //    SPI_EnableAutoSS(SPI0, SPI_SS0, SPI_SS_ACTIVE_LOW);
@@ -306,7 +306,6 @@ int main()
 
     /* Enable USB device interrupt */
     NVIC_EnableIRQ(USBD_IRQn);
-
 
     printf("\n\nnuc123-fdsemu started.\n");
     printf("--CPU @ %d MHz\n", SystemCoreClock / 1000000);
