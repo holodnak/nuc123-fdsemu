@@ -25,14 +25,14 @@ volatile int outbit = 0;
 volatile int needbyte;
 volatile int bytes;
 
-int led = 0;
+uint8_t writelen;
+int havewrite;
 
 void TMR1_IRQHandler(void)
 {
 	TIMER_ClearIntFlag(TIMER1);
 
 	rate ^= 1;
-	//PA10 = rate;
 	if(rate) {
 		count++;
 		if(count == 8) {
@@ -42,9 +42,22 @@ void TMR1_IRQHandler(void)
 		}
 		outbit = data & 1;
 		data >>= 1;
-		//PA11 = outbit;
 	}
 	PA11 = (outbit ^ rate) & 1;
+}
+
+void EINT0_IRQHandler(void)
+{
+    GPIO_CLR_INT_FLAG(PB, BIT14);
+
+	if(IS_WRITE()) {
+		int ra = TIMER_GetCounter(TIMER0);
+
+		TIMER0->TCSR = TIMER_TCSR_CRST_Msk;
+		TIMER0->TCSR = TIMER_CONTINUOUS_MODE | 7 | TIMER_TCSR_TDR_EN_Msk | TIMER_TCSR_CEN_Msk;
+		writelen = (uint8_t)ra;
+		havewrite++;
+	}
 }
 
 #define DECODEBUFSIZE	(1024 * 12)
@@ -126,23 +139,6 @@ __inline void decode(uint8_t *dst, uint8_t src, int dstSize, int *outptr) {
 			break;
 	}
 	*outptr = out;
-}
-
-uint8_t writelen;
-int havewrite;
-
-void EINT0_IRQHandler(void)
-{
-    GPIO_CLR_INT_FLAG(PB, BIT14);
-
-	if(IS_WRITE()) {
-		int ra = TIMER_GetCounter(TIMER0);
-
-		TIMER0->TCSR = TIMER_TCSR_CRST_Msk;
-		TIMER0->TCSR = TIMER_CONTINUOUS_MODE | 7 | TIMER_TCSR_TDR_EN_Msk | TIMER_TCSR_CEN_Msk;
-		writelen = (uint8_t)ra;
-		havewrite++;
-	}
 }
 
 static void begin_transfer(void)
@@ -243,6 +239,7 @@ static void begin_transfer(void)
 
 	flash_read_disk_stop();
 	
+	//needs to be cleaned up/optimized
 	if(write_num) {
 
 		//write the written data to flash
@@ -284,12 +281,7 @@ void fds_init(void)
 	CLEAR_READY();
 	CLEAR_MEDIASET();
 	CLEAR_MOTORON();
-
 	SET_WRITABLE();
-
-//	cpu_irq_disable();
-//	init_transfer_timer();
-//	init_capture_timer();
 }
 
 void fds_tick(void)
