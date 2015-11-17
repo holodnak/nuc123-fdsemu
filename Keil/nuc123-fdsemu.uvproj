@@ -464,6 +464,11 @@
               <FileType>1</FileType>
               <FilePath>..\hid_transfer.c</FilePath>
             </File>
+            <File>
+              <FileName>fdsutil.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\fdsutil.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -513,6 +518,11 @@
               <FileName>crc.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\Library\StdDriver\src\crc.c</FilePath>
+            </File>
+            <File>
+              <FileName>fmc.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Library\StdDriver\src\fmc.c</FilePath>
             </File>
           </Files>
         </Group>

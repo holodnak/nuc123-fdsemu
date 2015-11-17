@@ -46,6 +46,7 @@ PIN 47 = rate
 
 extern volatile int diskblock;
 
+void fds_init(void);
 void fds_tick(void);
 void fds_insert_disk(int block);
 void fds_remove_disk(void);

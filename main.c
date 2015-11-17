@@ -14,8 +14,11 @@
 #include "sram.h"
 #include "fds.h"
 #include "hid_transfer.h"
+#include "version.h"
 
 #define HCLK_CLOCK           72000000
+
+const uint16_t version = VERSION;
 
 void SYS_Init(void)
 {
@@ -101,8 +104,9 @@ void SYS_Init(void)
     GPIO_SetMode(PD, BIT1, GPIO_PMD_OUTPUT);
     GPIO_SetMode(PD, BIT0, GPIO_PMD_OUTPUT);
 
+    GPIO_SetMode(PA, BIT10, GPIO_PMD_INPUT);
     GPIO_SetMode(PA, BIT11, GPIO_PMD_OUTPUT);
-    GPIO_SetMode(PA, BIT12,GPIO_PMD_INPUT);
+    GPIO_SetMode(PA, BIT12, GPIO_PMD_INPUT);
 //    GPIO_SetMode(PA, BIT13,GPIO_PMD_INPUT);
 
     /* Configure PB.14 as EINT0 pin and enable interrupt by rising edge trigger */
@@ -140,10 +144,10 @@ void SPI_Init(void)
 //    SPI_EnableAutoSS(SPI0, SPI_SS0, SPI_SS_ACTIVE_LOW);
 }
 
-static flash_header_t header2;
-
 static void print_block_info(int block)
 {
+	flash_header_t header2;
+
 	flash_read_disk_header(block,&header2);
 	if(header2.name[0] == 0xFF) {
 		printf("block %X: empty\r\n",block);
@@ -209,8 +213,6 @@ static void console_tick(void)
 {
 	int ch = 0;
 
-//	if(usart_read_char(USART_DEBUG,&ch) == USART_SUCCESS) {
-//	if(kbhit() && (ch = GetChar())) {
 	if(read_char(&ch) == 0) {
 		int n;
 		char help[] =
@@ -307,13 +309,15 @@ int main()
     /* Enable USB device interrupt */
     NVIC_EnableIRQ(USBD_IRQn);
 
-    printf("\n\nnuc123-fdsemu started.\n");
+    printf("\n\nnuc123-fdsemu v%d.%02d started.\n",version >> 8,version & 0xFF);
     printf("--CPU @ %d MHz\n", SystemCoreClock / 1000000);
     printf("--SPI0 @ %d MHz\n", SPI_GetBusClock(SPI0) / 1000000);
     printf("--SPI1 @ %d MHz\n", SPI_GetBusClock(SPI1) / 1000000);
 
 	flash_init();
 	sram_init();
+
+	fds_init();
 
 	print_block_info(0);
 	while(1) {

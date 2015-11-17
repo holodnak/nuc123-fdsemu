@@ -8,6 +8,7 @@
 /*!<Includes */
 #include "NUC123.h"
 #include "hid_transfer.h"
+#include "version.h"
 
 #define BUFFER_SIZE 63
 
@@ -49,90 +50,17 @@ const uint8_t HID_DeviceReportDescriptor[] = {
     0x09, 0x0B,         //   USAGE (Vendor Usage 0x05)
     0xB1, 0x02,         //   Feature (Data, Variable,Abs)
 
+    0x85, 0xF1,         //   REPORT_ID (3)
+    0x95, BUFFER_SIZE,  //   REPORT_COUNT (64)
+    0x09, 0x09,         //   USAGE (Vendor Usage 0x03)
+    0x81, 0x02,         //   INPUT (Data,Variable,Abs)
+    0x09, 0x0A,         //   USAGE (Vendor Usage 0x04)
+    0x91, 0x02,         //   OUTPUT(Data, Variable,Abs
+    0x09, 0x0B,         //   USAGE (Vendor Usage 0x05)
+    0xB1, 0x02,         //   Feature (Data, Variable,Abs)
+
 	0xC0                // END_COLLECTION
 };
-/*
-const uint8_t HID_DeviceReportDescriptor[] = {
-    0x06, 0xA0, 0xFF,   // USAGE_PAGE (Vendor Defined page 0xA1)
-    0x09, 0x01,         // USAGE (Vendor Usage 0x01)
-    0xA1, 0x01,         // COLLECTION (Application)
-                        // INPUT
-    0x09, 0x03,         //   USAGE (Vendor Usage 0x03)
-    0x15, 0x00,         //   LOGICAL_MINIMUM(0)
-    0x26, 0xFF, 0x00,   //   LOGICAL_MAXIMUM(255)
-    0x75, 0x08,         //   REPORT_SIZE
-    0x95, BUFFER_SIZE,  //   REPORT_COUNT (64)
-    0x81, 0x02,         //   INPUT (Data,Variable,Abs)
-                        // OUTPUT
-    0x09, 0x04,         //   USAGE (Vendor Usage 0x04)
-    0x15, 0x00,         //   LOGICAL_MINIMUM(0)
-    0x26, 0xFF, 0x00,   //   LOGICAL_MAXIMUM(255)
-    0x75, 0x08,         //   REPORT_SIZE (8)
-    0x95, BUFFER_SIZE,  //   REPORT_COUNT (64)
-    0x91, 0x02,         //   OUTPUT(Data, Variable,Abs)
-                        // Feature
-    0x09, 0x05,         //   USAGE (Vendor Usage 0x05)
-    0x15, 0x00,         //   LOGICAL_MINIMUM(0)
-    0x26, 0xFF, 0x00,   //   LOGICAL_MAXIMUM(255)
-    0x75, 0x08,         //   REPORT_SIZE (8)
-    0x95, BUFFER_SIZE,  //   REPORT_COUNT (64)
-    0xB1, 0x02,         //   Feature (Data, Variable,Abs)
-    0xC0                // END_COLLECTION
-};*/
-/*
-const uint8_t HID_DeviceReportDescriptor[] = {
-    0x06, 0xA0, 0xFF,   // USAGE_PAGE (Vendor Defined page 0xA1)
-    0x09, 0x01,         // USAGE (Vendor Usage 0x01)
-    0xA1, 0x01,         // COLLECTION (Application)
-                        // Global items
-    0x15, 0x00,         //   LOGICAL_MINIMUM(0)
-    0x26, 0xFF, 0x00,   //   LOGICAL_MAXIMUM(255)
-    0x75, 0x08,         //   REPORT_SIZE
-    0x95, BUFFER_SIZE,  //   REPORT_COUNT (64)
-                        // INPUT
-    0x09, 0x03,         //   USAGE (Vendor Usage 0x03)
-    0x81, 0x02,         //   INPUT (Data,Variable,Abs)
-                        // OUTPUT
-    0x09, 0x04,         //   USAGE (Vendor Usage 0x04)
-    0x91, 0x02,         //   OUTPUT(Data, Variable,Abs
-                        // Feature
-    0x09, 0x05,         //   USAGE (Vendor Usage 0x05)
-    0xB1, 0x02,         //   Feature (Data, Variable,Abs)
-    0xC0                // END_COLLECTION
-};
-
-*/
-
-
-/*
-const uint8_t HID_DeviceReportDescriptor[] =
-{
-    0x05, 0x01, // USAGE_PAGE (Generic Desktop)
-    0x09, 0x00, // USAGE (0)
-    0xA1, 0x01, // COLLECTION (Application)
-    0x15, 0x00, //     LOGICAL_MINIMUM (0)
-    0x25, 0xFF, //     LOGICAL_MAXIMUM (255)
-    0x19, 0x01, //     USAGE_MINIMUM (1)
-    0x29, 0x08, //     USAGE_MAXIMUM (8)
-    0x95, 0x40, //     REPORT_COUNT (8)
-    0x75, 0x08, //     REPORT_SIZE (8)
-    0x81, 0x02, //     INPUT (Data,Var,Abs)
-
-    0x95, 0x40, //     REPORT_COUNT (8)
-    0x75, 0x08, //     REPORT_SIZE (8)
-    0x19, 0x01, //     USAGE_MINIMUM (1)
-    0x29, 0x08, //     USAGE_MAXIMUM (8)
-    0x91, 0x02, //     OUTPUT (Data,Var,Abs)
-
-    0x95, 0x40, //     REPORT_COUNT (8)
-    0x75, 0x08, //     REPORT_SIZE (8)
-    0x19, 0x01, //     USAGE_MINIMUM (1)
-    0x29, 0x08, //     USAGE_MAXIMUM (8)
-    0xB1, 0x00, //     FEATURE (Data,Var,Abs)
-
-0xC0        // END_COLLECTION
-};
-*/
 
 /*----------------------------------------------------------------------------*/
 /*!<USB Device Descriptor */
@@ -151,7 +79,8 @@ const uint8_t gu8DeviceDescriptor[] =
     /* idProduct */
     USBD_PID & 0x00FF,
     (USBD_PID & 0xFF00) >> 8,
-    0x00, 0x00,     /* bcdDevice */
+    VERSION_LO,
+	VERSION_HI,     /* bcdDevice */
     0x01,           /* iManufacture */
     0x02,           /* iProduct */
     0x03,           /* iSerialNumber - no serial */
@@ -226,29 +155,29 @@ const uint8_t gu8StringLang[4] =
 /*!<USB Vendor String Descriptor */
 const uint8_t gu8VendorStringDesc[] =
 {
-    16,
+    18,
     DESC_STRING,
-    'N', 0, 
-	'u', 0, 
-	'v', 0, 
+    'H', 0, 
 	'o', 0, 
-	't', 0,
-	'o', 0,
-	'n', 0
+	'l', 0, 
+	'o', 0, 
+	'd', 0,
+	'n', 0,
+	'a', 0,
+	'k', 0,
 };
 
 /*!<USB Product String Descriptor */
 const uint8_t gu8ProductStringDesc[] =
 {
-    16,             /* bLength          */
+    14,             /* bLength          */
     DESC_STRING,    /* bDescriptorType  */
     'F', 0, 
 	'D', 0, 
 	'S', 0, 
-	'd', 0, 
-	'i', 0, 
-	'c', 0, 
-	'k', 0, 
+	'e', 0, 
+	'm', 0, 
+	'u', 0, 
 };
 
 
