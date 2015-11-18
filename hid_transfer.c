@@ -140,7 +140,7 @@ void USBD_IRQHandler(void)
             /* Clear event flag */
             USBD_CLR_INT_FLAG(USBD_INTSTS_EP2);
             // Interrupt IN
-//            EP2_Handler();
+            EP2_Handler();
         }
 
         if(u32IntSts & USBD_INTSTS_EP3)
@@ -148,7 +148,7 @@ void USBD_IRQHandler(void)
             /* Clear event flag */
             USBD_CLR_INT_FLAG(USBD_INTSTS_EP3);
             // Interrupt OUT
-//            EP3_Handler();
+            EP3_Handler();
         }
 
         if(u32IntSts & USBD_INTSTS_EP4)
@@ -219,16 +219,16 @@ void HID_Init(void)
 
     /*****************************************************/
     /* EP2 ==> Interrupt IN endpoint, address 1 */
-//    USBD_CONFIG_EP(EP2, USBD_CFG_EPMODE_IN | INT_IN_EP_NUM);
+    USBD_CONFIG_EP(EP2, USBD_CFG_EPMODE_IN | INT_IN_EP_NUM);
     /* Buffer range for EP2 */
-//    USBD_SET_EP_BUF_ADDR(EP2, EP2_BUF_BASE);
+    USBD_SET_EP_BUF_ADDR(EP2, EP2_BUF_BASE);
 
     /* EP3 ==> Interrupt OUT endpoint, address 2 */
-//    USBD_CONFIG_EP(EP3, USBD_CFG_EPMODE_OUT | INT_OUT_EP_NUM);
+    USBD_CONFIG_EP(EP3, USBD_CFG_EPMODE_OUT | INT_OUT_EP_NUM);
     /* Buffer range for EP3 */
-//    USBD_SET_EP_BUF_ADDR(EP3, EP3_BUF_BASE);
+    USBD_SET_EP_BUF_ADDR(EP3, EP3_BUF_BASE);
     /* trigger to receive OUT data */
-//    USBD_SET_PAYLOAD_LEN(EP3, EP3_MAX_PKT_SIZE);
+    USBD_SET_PAYLOAD_LEN(EP3, EP3_MAX_PKT_SIZE);
 
 }
 
@@ -294,7 +294,7 @@ void process_send_feature(uint8_t *usbdata,int len)
 				break;
 		}
 	}
-	if(reportid == ID_UPDATEFIRMWARE) {
+	else if(reportid == ID_UPDATEFIRMWARE) {
 		printf("process_send_feature: ID_UPDATEFIRMWARE: not implemented yet\n");
 		if(initcs) {
 		}

@@ -353,7 +353,6 @@ void create_disklist(void)
 
 	//correct
 	crc = calc_crc(disklistblock,4096 + 1 + 2);
-	printf("calc_crc() returned %X\n",crc);
 	disklist[4096] = (uint8_t)(crc >> 0);
 	disklist[4097] = (uint8_t)(crc >> 8);
 }
@@ -504,6 +503,67 @@ void fds_init(void)
 	fds_insert_disk(0);
 }
 
+enum {
+	MODE_TRANSFER = 0,
+	MODE_DISKREAD
+};
+
+int mode = MODE_TRANSFER;
+
+//setup for talking to the ram adaptor
+void fds_setup_transfer(void)
+{
+    /* Unlock protected registers */
+    SYS_UnlockReg();
+
+	//setup gpio pins for the fds
+    GPIO_SetMode(PD, BIT5, GPIO_PMD_INPUT);
+    GPIO_SetMode(PD, BIT4, GPIO_PMD_INPUT);
+    GPIO_SetMode(PD, BIT3, GPIO_PMD_OUTPUT);
+    GPIO_SetMode(PD, BIT2, GPIO_PMD_OUTPUT);
+    GPIO_SetMode(PD, BIT1, GPIO_PMD_OUTPUT);
+    GPIO_SetMode(PD, BIT0, GPIO_PMD_OUTPUT);
+    GPIO_SetMode(PA, BIT12, GPIO_PMD_INPUT);
+    GPIO_SetMode(PA, BIT11, GPIO_PMD_OUTPUT);
+    GPIO_SetMode(PB, BIT14, GPIO_PMD_INPUT);
+
+	GPIO_DisableEINT0(PA, 11);
+    GPIO_EnableEINT0(PB, 14, GPIO_INT_RISING);
+
+	GPIO_ENABLE_DEBOUNCE(PB, BIT14);
+	
+	SYS_LockReg();
+
+	mode = MODE_TRANSFER;
+}
+
+//setup for reading/writing disks with the drive
+void fds_setup_diskread(void)
+{
+    /* Unlock protected registers */
+    SYS_UnlockReg();
+
+	//setup gpio pins for the fds
+	GPIO_SetMode(PD, BIT5, GPIO_PMD_OUTPUT);	//-write
+	GPIO_SetMode(PD, BIT4, GPIO_PMD_OUTPUT);	//-scanmedia
+	GPIO_SetMode(PD, BIT3, GPIO_PMD_INPUT);		//motoron
+	GPIO_SetMode(PD, BIT2, GPIO_PMD_INPUT);		//-writable
+	GPIO_SetMode(PD, BIT1, GPIO_PMD_INPUT);		//-mediaset
+	GPIO_SetMode(PD, BIT0, GPIO_PMD_INPUT);		//-ready
+	GPIO_SetMode(PA, BIT12, GPIO_PMD_OUTPUT);	//-stopmotor
+	GPIO_SetMode(PA, BIT11, GPIO_PMD_INPUT);	//read data
+	GPIO_SetMode(PB, BIT14, GPIO_PMD_OUTPUT);	//write data
+
+	GPIO_DisableEINT0(PB, 14);
+	GPIO_EnableEINT0(PA, 11, GPIO_INT_RISING);
+
+	GPIO_DISABLE_DEBOUNCE(PB, BIT14);
+	
+	SYS_LockReg();
+
+	mode = MODE_DISKREAD;
+}
+
 int find_first_disk_side(int block)
 {
 	flash_header_t header;
@@ -531,6 +591,10 @@ int find_first_disk_side(int block)
 
 void fds_tick(void)
 {
+	if(mode == MODE_DISKREAD) {
+		return;
+	}
+	
 	//if the button has been pressed to flip disk sides
 	if(PA10 != 0) {
 		flash_header_t header;

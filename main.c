@@ -222,7 +222,8 @@ static void console_tick(void)
 		"  r   : remove disk\r\n"
 		"  f   : flip disk to next side/disk\r\n"
 		"  p   : print disks stored in flash\r\n"
-		"  t   : test the system\r\n"
+		"  d   : disk read mode\r\n"
+		"  t   : transfer mode\r\n"
 		"\r\n";
 
 		switch((char)ch) {
@@ -256,7 +257,6 @@ static void console_tick(void)
 			break;
 		case 'i':
 			fds_insert_disk(diskblock);
-//			hexdump("disk + 3500",SDRAM + 3500,256);
 			break;
 		case 'r':
 			fds_remove_disk();
@@ -266,15 +266,32 @@ static void console_tick(void)
 				print_block_info(n);
 			}
 			break;
-		case 't':
+		case 's':
 			flash_init();
 			sram_init();
 //			memcheck();
 			break;
 		case 'd':
+			printf("entering disk read mode.\n");
+			fds_setup_diskread();
+ 			break;
+		case 't':
+			printf("entering transfer mode.\n");
+			fds_setup_transfer();
+			if(IS_READY())		printf("drive is ready\n");
+			else				printf("drive is not ready\n");
+			if(IS_MEDIASET())	printf("media is set\n");
+			else				printf("media is not set\n");
+			if(IS_WRITABLE())	printf("media is writable\n");
+			else				printf("media is not writable\n");
+			if(IS_MOTORON())	printf("motor is on\n");
+			else				printf("motor is not on\n");
  			break;
 		case 'c':
-			flash_copy_block(0xB,0x9);
+			printf("trying to read\n");
+			CLEAR_WRITE();
+			SET_SCANMEDIA();
+			CLEAR_STOPMOTOR();
 			break;
 		}
 	}
@@ -309,7 +326,7 @@ int main()
     /* Enable USB device interrupt */
     NVIC_EnableIRQ(USBD_IRQn);
 
-    printf("\n\nnuc123-fdsemu v%d.%02d started.\n",version >> 8,version & 0xFF);
+    printf("\n\nnuc123-fdsemu v%d.%02d started.  Compiled on "__DATE__"\n",version >> 8,version & 0xFF);
     printf("--CPU @ %d MHz\n", SystemCoreClock / 1000000);
     printf("--SPI0 @ %d MHz\n", SPI_GetBusClock(SPI0) / 1000000);
     printf("--SPI1 @ %d MHz\n", SPI_GetBusClock(SPI1) / 1000000);
