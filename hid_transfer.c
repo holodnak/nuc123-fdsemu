@@ -283,7 +283,7 @@ void update_firmware(void)
 //	SYS_LockReg();
 
 	//reboot to bootloader
-    FMC->ISPCON = 1;
+    FMC->ISPCON = 2;
     SYS->IPRSTC1 = 2;
     while(1);
 }
