@@ -108,6 +108,8 @@ void SYS_Init(void)
     GPIO_SetMode(PA, BIT11, GPIO_PMD_OUTPUT);
     GPIO_SetMode(PA, BIT12, GPIO_PMD_INPUT);
 //    GPIO_SetMode(PA, BIT13,GPIO_PMD_INPUT);
+    GPIO_SetMode(PB, BIT5, GPIO_PMD_OUTPUT);
+	PB5 = 0;
 
     /* Configure PB.14 as EINT0 pin and enable interrupt by rising edge trigger */
     GPIO_SetMode(PB, BIT14, GPIO_PMD_INPUT);
@@ -326,7 +328,7 @@ int main()
     /* Enable USB device interrupt */
     NVIC_EnableIRQ(USBD_IRQn);
 
-    printf("\n\nnuc123-fdsemu v%d.%02d started.  Compiled on "__DATE__"\n",version >> 8,version & 0xFF);
+    printf("\n\nnuc123-fdsemu v%x.%02x started.  Compiled on "__DATE__"\n",version >> 8,version & 0xFF);
     printf("--CPU @ %d MHz\n", SystemCoreClock / 1000000);
     printf("--SPI0 @ %d MHz\n", SPI_GetBusClock(SPI0) / 1000000);
     printf("--SPI1 @ %d MHz\n", SPI_GetBusClock(SPI1) / 1000000);
