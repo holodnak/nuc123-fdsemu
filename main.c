@@ -18,7 +18,7 @@
 
 #define HCLK_CLOCK           72000000
 
-const uint16_t version = VERSION;
+const uint32_t version = VERSION;
 
 void SYS_Init(void)
 {
@@ -328,7 +328,7 @@ int main()
     /* Enable USB device interrupt */
     NVIC_EnableIRQ(USBD_IRQn);
 
-    printf("\n\nnuc123-fdsemu v%x.%02x started.  Compiled on "__DATE__"\n",version >> 8,version & 0xFF);
+    printf("\n\nnuc123-fdsemu v%d.%02d started.  Compiled on "__DATE__"\n",version / 100,version % 100);
     printf("--CPU @ %d MHz\n", SystemCoreClock / 1000000);
     printf("--SPI0 @ %d MHz\n", SPI_GetBusClock(SPI0) / 1000000);
     printf("--SPI1 @ %d MHz\n", SPI_GetBusClock(SPI1) / 1000000);

@@ -39,6 +39,11 @@ enum {
     ID_DISK_READ,
     ID_DISK_WRITE_START,
     ID_DISK_WRITE,
+	
+	ID_FIRMWARE_READ = 0x40,
+	ID_FIRMWARE_WRITE,
+	ID_FIRMWARE_UPDATE,
+
 };
 
 void process_send_feature(uint8_t *usbdata,int len);
@@ -250,10 +255,44 @@ uint8_t size;
 uint8_t holdcs,initcs;
 uint32_t addr;
 
+void update_firmware(void)
+{
+	int i;
+	uint32_t addr, data;
+
+	SYS_UnlockReg();
+	FMC_Open();
+	FMC_EnableAPUpdate();
+
+	for(i=0x8000;i<0x10000;i+=512) {
+		if(FMC_Erase(i) == -1) {
+			printf("FMC_Erase failed\n");
+		}
+	}
+	flash_read_start(0x8000);
+	for(i=0x8000;i<0x10000;i+=4) {
+		flash_read((uint8_t*)&data,4);
+		FMC_Write(i,data);
+	}
+	flash_read_stop();
+
+	FMC_DisableAPUpdate();
+	FMC_Close();
+	printf("firmware updated, rebooting\n");
+
+//	SYS_LockReg();
+
+	//reboot to bootloader
+    FMC->ISPCON = 1;
+    SYS->IPRSTC1 = 2;
+    while(1);
+}
+
 void process_send_feature(uint8_t *usbdata,int len)
 {
 	uint8_t *buf = epdata;
 	uint8_t reportid;
+	int i;
 
     USBD_MemCopy((uint8_t *)buf, usbdata, len);
 
@@ -276,7 +315,13 @@ void process_send_feature(uint8_t *usbdata,int len)
 			spi_deselect_device(SPI_FLASH, 0);
 		}
 	}
-	
+
+	//write firmware to aprom
+	else if(reportid == ID_FIRMWARE_UPDATE) {
+		printf("firmware update requested\n");
+		update_firmware();
+	}
+
 	//spi read
 	else if(reportid == ID_SPI_READ) {
 		switch(buf[4]) {
@@ -306,8 +351,6 @@ void process_send_feature(uint8_t *usbdata,int len)
 
 void get_feature_report(uint8_t reportid, int len)
 {
-	static int readstarted = 0;
-
 	usbbuflen = len;
 
 	//spi read
@@ -332,8 +375,6 @@ void HID_ClassRequest(void)
 {
     uint8_t buf[8];
 	volatile uint8_t *ptr;
-	uint8_t *ptr2 = epdata;
-	int len, i;
 
     USBD_GetSetupPacket(buf);
 

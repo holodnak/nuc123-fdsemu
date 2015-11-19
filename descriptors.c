@@ -50,7 +50,16 @@ const uint8_t HID_DeviceReportDescriptor[] = {
     0x09, 0x0B,         //   USAGE (Vendor Usage 0x05)
     0xB1, 0x02,         //   Feature (Data, Variable,Abs)
 
-    0x85, 0xF1,         //   REPORT_ID (3)
+    0x85, 0x42,         //   REPORT_ID (0x42)
+    0x95, BUFFER_SIZE,  //   REPORT_COUNT (64)
+    0x09, 0x09,         //   USAGE (Vendor Usage 0x03)
+    0x81, 0x02,         //   INPUT (Data,Variable,Abs)
+    0x09, 0x0A,         //   USAGE (Vendor Usage 0x04)
+    0x91, 0x02,         //   OUTPUT(Data, Variable,Abs
+    0x09, 0x0B,         //   USAGE (Vendor Usage 0x05)
+    0xB1, 0x02,         //   Feature (Data, Variable,Abs)
+
+    0x85, 0xF1,         //   REPORT_ID (0xF1)
     0x95, BUFFER_SIZE,  //   REPORT_COUNT (64)
     0x09, 0x09,         //   USAGE (Vendor Usage 0x03)
     0x81, 0x02,         //   INPUT (Data,Variable,Abs)
