@@ -8,7 +8,7 @@
 /*!<Includes */
 #include "NUC123.h"
 #include "hid_transfer.h"
-#include "version.h"
+#include "build.h"
 
 #define BUFFER_SIZE 63
 
@@ -88,8 +88,8 @@ const uint8_t gu8DeviceDescriptor[] =
     /* idProduct */
     USBD_PID & 0x00FF,
     (USBD_PID & 0xFF00) >> 8,
-    VERSION_LO,
-	VERSION_HI,     /* bcdDevice */
+    BUILDNUM & 0xFF,
+	(BUILDNUM >> 8) & 0xFF,     /* bcdDevice */
     0x01,           /* iManufacture */
     0x02,           /* iProduct */
     0x03,           /* iSerialNumber - no serial */

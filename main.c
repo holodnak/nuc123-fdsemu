@@ -15,6 +15,7 @@
 #include "fds.h"
 #include "hid_transfer.h"
 #include "version.h"
+#include "build.h"
 
 #define HCLK_CLOCK           72000000
 
@@ -328,7 +329,7 @@ int main()
     /* Enable USB device interrupt */
     NVIC_EnableIRQ(USBD_IRQn);
 
-    printf("\n\nnuc123-fdsemu v%d.%02d started.  Compiled on "__DATE__" at "__TIME__"\n",version / 100,version % 100);
+    printf("\n\nnuc123-fdsemu v%d.%02d build %d started.  Compiled on "__DATE__" at "__TIME__"\n",version / 100,version % 100,BUILDNUM);
     printf("--CPU @ %d MHz\n", SystemCoreClock / 1000000);
     printf("--SPI0 @ %d MHz\n", SPI_GetBusClock(SPI0) / 1000000);
     printf("--SPI1 @ %d MHz\n", SPI_GetBusClock(SPI1) / 1000000);
