@@ -10,6 +10,7 @@ typedef struct flashchip_s {
 
 const flashchip_t flashchips[] = {
 	{0xEF, 0x13, 0x100000}, 	//1mbyte
+	{0x01, 0x16, 0x800000}, 	//8mbyte
 	{0x00, 0x00, -1}			//end of list
 };
 
@@ -263,6 +264,8 @@ int flash_get_size(void)
 	spi_read_packet(SPI_FLASH, data, 2);
 	spi_deselect_device(SPI_FLASH, 0);
 
+	printf("flash_get_size: manufacturer = $%02X, device = $%02X\n",data[0],data[1]);
+	
 	//search table of chips
 	for(i=0;flashchips[i].size != -1;i++) {
 		if(data[0] == flashchips[i].manufacturer && data[1] == flashchips[i].device) {

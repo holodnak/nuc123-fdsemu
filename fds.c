@@ -70,7 +70,7 @@ struct write_s {
 	int diskpos;			//position on disk where write was started
 	int decstart;			//position in decodebuf the data begins
 	int decend;				//position in decodebuf the data ends
-} writes[4];
+} writes[8];
 
 int write_num;				//number of writes
 
@@ -176,6 +176,10 @@ static void begin_transfer(void)
 		if(IS_WRITE()) {
 			int len = 0;
 
+			if(write_num >= 8) {
+				printf("too many writes!\n");
+				break;
+			}
 			writes[write_num].diskpos = bytes + 2;
 			TIMER0->TCSR = TIMER_TCSR_CRST_Msk;
 			TIMER0->TCMPR = 0xFFFFFF;
@@ -184,7 +188,13 @@ static void begin_transfer(void)
 			while(IS_WRITE()) {
 				if(havewrite) {
 					havewrite = 0;
-					decode(decodebuf + decodelen,raw_to_raw03_byte(writelen),DECODEBUFSIZE,&len);
+					if(len < DECODEBUFSIZE) {
+						decode(decodebuf + decodelen,raw_to_raw03_byte(writelen),DECODEBUFSIZE,&len);
+					}
+					else {
+						printf("decodebuf is too small\n");
+						break;
+					}
 				}
 				if(needbyte) {
 					needbyte = 0;
