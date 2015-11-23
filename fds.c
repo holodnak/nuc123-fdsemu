@@ -17,6 +17,20 @@ PIN 48 = data
 PIN 47 = rate
 */
 
+
+#define DECODEBUFSIZE	(1024 * 12)
+
+uint8_t sectorbuf[4096];
+uint8_t decodebuf[DECODEBUFSIZE];
+
+struct write_s {
+	int diskpos;			//position on disk where write was started
+	int decstart;			//position in decodebuf the data begins
+	int decend;				//position in decodebuf the data ends
+} writes[8];
+
+int write_num;				//number of writes
+
 volatile int rate = 0;
 volatile int diskblock = 0;
 volatile int count = 0;
@@ -47,10 +61,12 @@ void TMR1_IRQHandler(void)
 	PA11 = (outbit ^ rate) & 1;
 }
 
+//for writes coming out of the ram adaptor
 void EINT0_IRQHandler(void)
 {
     GPIO_CLR_INT_FLAG(PB, BIT14);
 
+	printf("EINT0_IRQHandler");
 	if(IS_WRITE()) {
 		int ra = TIMER_GetCounter(TIMER0);
 
@@ -61,18 +77,26 @@ void EINT0_IRQHandler(void)
 	}
 }
 
-#define DECODEBUFSIZE	(1024 * 13)
+volatile int bufpos,sentbufpos;
 
-uint8_t sectorbuf[4096];
-uint8_t decodebuf[DECODEBUFSIZE];
+volatile diskread_t diskread;
 
-struct write_s {
-	int diskpos;			//position on disk where write was started
-	int decstart;			//position in decodebuf the data begins
-	int decend;				//position in decodebuf the data ends
-} writes[8];
+//for data coming out of the disk drive
+void GPAB_IRQHandler(void)
+{
+    if(GPIO_GET_INT_FLAG(PA, BIT11)) {
+		int ra;
 
-int write_num;				//number of writes
+		GPIO_CLR_INT_FLAG(PA, BIT11);
+		ra = TIMER_GetCounter(TIMER0);
+		TIMER0->TCSR = TIMER_TCSR_CRST_Msk;
+		TIMER0->TCSR = TIMER_CONTINUOUS_MODE | 7 | TIMER_TCSR_TDR_EN_Msk | TIMER_TCSR_CEN_Msk;
+		decodebuf[bufpos++] = (uint8_t)ra;
+		if(bufpos >= DECODEBUFSIZE) {
+			bufpos = 0;
+		}
+    }
+}
 
 __inline uint8_t raw_to_raw03_byte(uint8_t raw)
 {
@@ -224,6 +248,7 @@ static void begin_transfer(void)
 			}
 		}
 	}
+
     NVIC_DisableIRQ(EINT0_IRQn);
     NVIC_DisableIRQ(TMR1_IRQn);
 	TIMER_Stop(TIMER0);
@@ -503,6 +528,88 @@ static void begin_transfer_loader(void)
 	printf("transferred %d bytes\r\n",bytes);
 }
 
+int needfinish;
+
+void fds_start_diskread(void)
+{
+	//clear decodebuf
+	memset(decodebuf,0,DECODEBUFSIZE);
+	bufpos = 0;
+	sentbufpos = 0;
+	needfinish = 0;
+
+	CLEAR_WRITE();
+	CLEAR_STOPMOTOR();
+	SET_SCANMEDIA();
+
+    NVIC_DisableIRQ(EINT0_IRQn);
+    NVIC_DisableIRQ(TMR1_IRQn);
+
+	TIMER_Start(TIMER0);
+    NVIC_EnableIRQ(GPAB_IRQn);
+}
+
+static int get_buf_size()
+{
+	int ret = 0;
+
+	if(bufpos >= sentbufpos) {
+		ret = bufpos - sentbufpos;
+	}
+	else {
+		ret = DECODEBUFSIZE - sentbufpos;
+		ret += bufpos;
+	}
+	return(ret);
+}
+
+int fds_diskread_getdata(uint8_t *bufbuf, int len)
+{
+	int ret = 0;
+	int t,v,w;
+	static int wasready = 0;
+	static int poop = 0;
+
+	if(IS_READY() == 0 && needfinish == 0) {
+		if(wasready) {
+			printf("drive no longer ready.\n");
+			wasready = 0;
+			needfinish = 1;
+			ret = 1;
+		}
+		else {
+			printf("waiting drive to be ready\n");
+			while(IS_READY() == 0);
+			wasready = 1;
+		}
+	}
+	
+	while(get_buf_size() < 256) {
+//		printf("waiting for data\n");
+	}
+
+	t = sentbufpos + len;
+
+	//if this read will loop around to the beginning of the buffer, handle it
+	if(t >= DECODEBUFSIZE) {
+		v = DECODEBUFSIZE - sentbufpos;
+		w = len - v;
+//		while(bufpos >= sentbufpos || bufpos < w);
+		memcpy(bufbuf,decodebuf + sentbufpos,v);
+		memcpy(bufbuf + v,decodebuf,w);
+		sentbufpos = w;
+	}
+	
+	//this read will be one unbroken chunk of the buffer
+	else {
+//		while(bufpos < (sentbufpos + len));
+		memcpy(bufbuf,decodebuf + sentbufpos,len);
+		sentbufpos += len;
+	}
+//	if(bufpos == sentbufpos
+	return(ret);
+}
+
 void fds_init(void)
 {
 	CLEAR_WRITABLE();
@@ -510,7 +617,9 @@ void fds_init(void)
 	CLEAR_MEDIASET();
 	CLEAR_MOTORON();
 
-	fds_insert_disk(0);
+//	fds_insert_disk(0);
+	
+	fds_setup_diskread();
 }
 
 enum {
@@ -537,14 +646,13 @@ void fds_setup_transfer(void)
     GPIO_SetMode(PA, BIT11, GPIO_PMD_OUTPUT);
     GPIO_SetMode(PB, BIT14, GPIO_PMD_INPUT);
 
-	GPIO_DisableEINT0(PA, 11);
+	GPIO_DisableEINT1(PA, 11);
     GPIO_EnableEINT0(PB, 14, GPIO_INT_RISING);
 
-	GPIO_ENABLE_DEBOUNCE(PB, BIT14);
-	
 	SYS_LockReg();
 
 	mode = MODE_TRANSFER;
+	printf("entering ram adaptor transfer mode\n");
 }
 
 //setup for reading/writing disks with the drive
@@ -565,13 +673,12 @@ void fds_setup_diskread(void)
 	GPIO_SetMode(PB, BIT14, GPIO_PMD_OUTPUT);	//write data
 
 	GPIO_DisableEINT0(PB, 14);
-	GPIO_EnableEINT0(PA, 11, GPIO_INT_RISING);
+	GPIO_EnableEINT1(PA, 11, GPIO_INT_RISING);
 
-	GPIO_DISABLE_DEBOUNCE(PB, BIT14);
-	
 	SYS_LockReg();
 
 	mode = MODE_DISKREAD;
+	printf("entering disk read mode\n");
 }
 
 int find_first_disk_side(int block)
@@ -599,9 +706,37 @@ int find_first_disk_side(int block)
 	return(block);
 }
 
+int mediaset = 0;
+int ready = 0;
+
 void fds_tick(void)
 {
 	if(mode == MODE_DISKREAD) {
+		if(IS_MEDIASET() && mediaset == 0) {
+			mediaset = 1;
+			printf("disk inserted\n");
+			if(IS_WRITABLE()) {
+				printf("...and it is writable\n");
+			}
+		}
+		if(IS_MEDIASET() == 0) {
+			if(mediaset) {
+				printf("disk ejected\n");
+			}
+			mediaset = 0;
+		}
+		if(IS_READY() && ready == 0) {
+			ready = 1;
+			printf("ready activated\n");
+		}
+		if(IS_READY() == 0) {
+			if(ready) {
+				printf("ready deactivated\n");
+				CLEAR_SCANMEDIA();
+				SET_STOPMOTOR();
+			}
+			ready = 0;
+		}
 		return;
 	}
 	

@@ -13,6 +13,7 @@
 #include "hid_transfer.h"
 #include "flash.h"
 #include "spiutil.h"
+#include "fds.h"
 
 uint8_t volatile g_u8EP2Ready = 0;
 
@@ -24,23 +25,6 @@ enum {
 
     DISK_READMAX=254,
     DISK_WRITEMAX=255,
-
-    //HID reportIDs
-    ID_RESET=0xf0,
-    ID_UPDATEFIRMWARE=0xf1,
-    ID_SELFTEST=0xf2,
-
-    ID_SPI_READ=1,
-    ID_SPI_READ_STOP,
-    ID_SPI_WRITE,
-
-    ID_READ_IO=0x10,
-    ID_DISK_READ_START,
-    ID_DISK_READ,
-    ID_DISK_WRITE_START,
-    ID_DISK_WRITE,
-	
-	ID_FIRMWARE_UPDATE = ID_UPDATEFIRMWARE,
 
 };
 
@@ -115,6 +99,7 @@ void USBD_IRQHandler(void)
         // EP events
         if(u32IntSts & USBD_INTSTS_EP0)
         {
+			extern uint8_t g_usbd_SetupPacket[];
             /* Clear event flag */
             USBD_CLR_INT_FLAG(USBD_INTSTS_EP0);
 
@@ -235,8 +220,7 @@ void HID_Init(void)
 
 }
 
-uint8_t usbbuf[64 + 1 + 192];
-int usbbuflen;
+uint8_t usbbuf[512];
 
 enum {
     PAGESIZE=256,
@@ -285,6 +269,8 @@ void update_firmware(void)
     SYS->IPRSTC1 = 2;
     while(1);
 }
+
+int sequence = 1;
 
 void process_send_feature(uint8_t *usbdata,int len)
 {
@@ -337,64 +323,84 @@ void process_send_feature(uint8_t *usbdata,int len)
 				break;
 		}
 	}
-	else if(reportid == ID_UPDATEFIRMWARE) {
-		printf("process_send_feature: ID_UPDATEFIRMWARE: not implemented yet\n");
-		if(initcs) {
-		}
+
+	//begin reading the disk
+	else if(reportid == ID_DISK_READ_START) {
+//		fds_setup_diskread();
+		fds_start_diskread();
+		sequence = 1;
+//		startread = 1;
+//		printf("process_send_feature: ID_DISK_READ_START\n");
 	}
+
 	else {
 		printf("process_send_feature: unknown reportid $%X\n",reportid);
 	}
 }
 
-void get_feature_report(uint8_t reportid, int len)
+int get_feature_report(uint8_t reportid, uint8_t *buf)
 {
-	usbbuflen = len;
+	int len = 63;
 
 	//spi read
 	if(reportid == ID_SPI_READ) {
-		spi_read_packet(SPI_FLASH, usbbuf, len);
+		spi_read_packet(SPI_FLASH, buf, len);
 //		printf("get_feature_report: ID_SPI_READ: len = %d\n",len);
 	}
 
 	//spi read stop
 	else if(reportid == ID_SPI_READ_STOP) {
-		spi_read_packet(SPI_FLASH, usbbuf, len);
+		spi_read_packet(SPI_FLASH, buf, len);
 		spi_deselect_device(SPI_FLASH, 0);
 //		printf("get_feature_report: ID_SPI_READ_STOP: len = %d\n",len);
 	}
 	
+	else if(reportid == ID_DISK_READ) {
+		len = 255;
+//		if(IS_READY() == 0) {
+//			printf("waiting drive buf to be ready\n");
+//			while(IS_READY() == 0);
+//		}
+//		printf("waiting read buf to have data\n");
+		buf[0] = sequence++;
+		fds_diskread_getdata(buf + 1,254);
+		if(IS_READY() == 0) {
+			len = 1;
+		}
+//		while(readbufready == 0) {}
+//		printf("putting read buf out usb\n");
+//		buf = readbuf[readbufready & 1];
+//		readbufready = 0;
+//		memcpy(usbbuf,buf,255);
+	}
+
 	else {
 		printf("get_feature_report: unknown report id %X\n",reportid);
 	}
+
+	return(len);
 }
 
 void HID_ClassRequest(void)
 {
     uint8_t buf[8];
-	volatile uint8_t *ptr;
+	int len;
 
     USBD_GetSetupPacket(buf);
 
     if(buf[0] & 0x80)    /* request data transfer direction */
     {
-		ptr = (uint8_t*)(USBD_BUF_BASE + USBD_GET_EP_BUF_ADDR(EP0));
         // Device to host
         switch(buf[1])
         {
             case GET_REPORT:
                 if(buf[3] == 3) {
-					get_feature_report(buf[2],63);
-					ptr[0] = buf[2];
-					memcpy(ptr + 1,usbbuf,63);
-					USBD_SET_DATA1(EP0);
-					USBD_SET_PAYLOAD_LEN(EP0, 64);
+					len = get_feature_report(buf[2],usbbuf + 1);
+					usbbuf[0] = buf[2];
+					USBD_PrepareCtrlIn(usbbuf, len + 1);
 					USBD_PrepareCtrlOut(0, 0);
 					break;
 				}
-//             {
-//                 break;
-//             }
             default:
             {
                 /* Setup error, stall the device */
@@ -405,7 +411,6 @@ void HID_ClassRequest(void)
     }
     else
     {
-		ptr = (uint8_t*)(USBD_BUF_BASE + USBD_GET_EP_BUF_ADDR(EP1));
         // Host to device
         switch(buf[1])
         {

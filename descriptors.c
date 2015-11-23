@@ -11,9 +11,72 @@
 #include "build.h"
 
 #define BUFFER_SIZE 63
+#define DISK_BUFFER_SIZE 63
+
+const uint8_t HID_DeviceReportDescriptor[] = {
+    0x06, 0x00, 0xff,              // USAGE_PAGE (Vendor Defined Page 1)
+    0x09, 0x01,                    // USAGE (Vendor Usage 1)
+    0xa1, 0x01,                    // COLLECTION (Application)
+    0x15, 0x00,                    //   LOGICAL_MINIMUM (0)
+    0x26, 0xff, 0x00,              //   LOGICAL_MAXIMUM (255)
+    0x75, 0x08,                    //   REPORT_SIZE (8)
+
+    0x85, ID_SPI_READ,             //   REPORT_ID (1)
+    0x09, 0x01,                    //   USAGE (Vendor Usage 1)
+    0x95, 0x3f,                    //   REPORT_COUNT (63)
+    0xb1, 0x00,                    //   FEATURE (Data,Ary,Abs)
+
+    0x85, ID_SPI_READ_STOP,        //   REPORT_ID (2)
+    0x09, 0x01,                    //   USAGE (Vendor Usage 1)
+    0x95, 0x3f,                    //   REPORT_COUNT (63)
+    0xb1, 0x00,                    //   FEATURE (Data,Ary,Abs)
+
+    0x85, ID_SPI_WRITE,            //   REPORT_ID (3)
+    0x09, 0x01,                    //   USAGE (Vendor Usage 1)
+    0x95, 0x3f,                    //   REPORT_COUNT (63)
+    0xb1, 0x00,                    //   FEATURE (Data,Ary,Abs)
+
+    0x85, ID_READ_IO,              //   REPORT_ID (16)
+    0x09, 0x01,                    //   USAGE (Vendor Usage 1)
+    0x95, 0x06,                    //   REPORT_COUNT (6)
+    0xb1, 0x00,                    //   FEATURE (Data,Ary,Abs)
+
+    0x85, ID_DISK_READ_START,      //   REPORT_ID (17)
+    0x09, 0x01,                    //   USAGE (Vendor Usage 1)
+    0x95, 0x01,                    //   REPORT_COUNT (1)
+    0xb1, 0x00,                    //   FEATURE (Data,Ary,Abs)
+
+    0x85, ID_DISK_READ,            //   REPORT_ID (18)
+    0x09, 0x01,                    //   USAGE (Vendor Usage 1)
+    0x95, 0xff,                    //   REPORT_COUNT (255)
+    0xb1, 0x00,                    //   FEATURE (Data,Ary,Abs)
+
+    0x85, ID_DISK_WRITE_START,     //   REPORT_ID (19)
+    0x09, 0x01,                    //   USAGE (Vendor Usage 1)
+    0x95, 0x01,                    //   REPORT_COUNT (1)
+    0xb1, 0x00,                    //   FEATURE (Data,Ary,Abs)
+
+    0x85, ID_DISK_WRITE,           //   REPORT_ID (20)
+    0x09, 0x01,                    //   USAGE (Vendor Usage 1)
+    0x95, 0xff,                    //   REPORT_COUNT (255)
+    0x91, 0x02,                    //   OUTPUT (Data,Ary,Abs)
+
+    0x85, ID_RESET,                //   REPORT_ID (240)
+    0x09, 0x01,                    //   USAGE (Vendor Usage 1)
+    0x95, 0x01,                    //   REPORT_COUNT (1)
+    0xb1, 0x00,                    //   FEATURE (Data,Ary,Abs)
+
+    0x85, ID_UPDATEFIRMWARE,       //   REPORT_ID (241)
+    0x09, 0x01,                    //   USAGE (Vendor Usage 1)
+    0x95, 0x01,                    //   REPORT_COUNT (1)
+    0xb1, 0x00,                    //   FEATURE (Data,Ary,Abs)
+
+	0xC0                // END_COLLECTION
+
+};
 
 /*!<USB HID Report Descriptor */
-
+/*
 const uint8_t HID_DeviceReportDescriptor[] = {
     0x06, 0xA0, 0xFF,   // USAGE_PAGE (Vendor Defined page 0xA1)
     0x09, 0x01,         // USAGE (Vendor Usage 0x01)
@@ -50,7 +113,7 @@ const uint8_t HID_DeviceReportDescriptor[] = {
     0x09, 0x0B,         //   USAGE (Vendor Usage 0x05)
     0xB1, 0x02,         //   Feature (Data, Variable,Abs)
 
-    0x85, 0xF1,         //   REPORT_ID (0x42)
+    0x85, ID_FIRMWARE_UPDATE,  //   REPORT_ID
     0x95, BUFFER_SIZE,  //   REPORT_COUNT (64)
     0x09, 0x09,         //   USAGE (Vendor Usage 0x03)
     0x81, 0x02,         //   INPUT (Data,Variable,Abs)
@@ -59,8 +122,17 @@ const uint8_t HID_DeviceReportDescriptor[] = {
     0x09, 0x0B,         //   USAGE (Vendor Usage 0x05)
     0xB1, 0x02,         //   Feature (Data, Variable,Abs)
 
-    0x85, 0xF1,         //   REPORT_ID (0xF1)
+    0x85, ID_DISK_READ_START,  //   REPORT_ID
     0x95, BUFFER_SIZE,  //   REPORT_COUNT (64)
+    0x09, 0x09,         //   USAGE (Vendor Usage 0x03)
+    0x81, 0x02,         //   INPUT (Data,Variable,Abs)
+    0x09, 0x0A,         //   USAGE (Vendor Usage 0x04)
+    0x91, 0x02,         //   OUTPUT(Data, Variable,Abs
+    0x09, 0x0B,         //   USAGE (Vendor Usage 0x05)
+    0xB1, 0x02,         //   Feature (Data, Variable,Abs)
+
+    0x85, ID_DISK_READ,      //   REPORT_ID
+    0x95, DISK_BUFFER_SIZE,  //   REPORT_COUNT (64)
     0x09, 0x09,         //   USAGE (Vendor Usage 0x03)
     0x81, 0x02,         //   INPUT (Data,Variable,Abs)
     0x09, 0x0A,         //   USAGE (Vendor Usage 0x04)
@@ -69,7 +141,7 @@ const uint8_t HID_DeviceReportDescriptor[] = {
     0xB1, 0x02,         //   Feature (Data, Variable,Abs)
 
 	0xC0                // END_COLLECTION
-};
+};*/
 
 /*----------------------------------------------------------------------------*/
 /*!<USB Device Descriptor */

@@ -56,6 +56,7 @@ void SYS_Init(void)
     CLK_EnableModuleClock(TMR1_MODULE);
     CLK_EnableModuleClock(TMR2_MODULE);
     CLK_EnableModuleClock(USBD_MODULE);
+    CLK_EnableModuleClock(WDT_MODULE);
 
     /* Select HCLK as the clock source of SPI0 */
     CLK_SetModuleClock(UART0_MODULE, CLK_CLKSEL1_UART_S_HXT, CLK_CLKDIV_UART(1));
@@ -65,6 +66,7 @@ void SYS_Init(void)
     CLK_SetModuleClock(TMR1_MODULE, CLK_CLKSEL1_TMR1_S_HCLK, 0);
     CLK_SetModuleClock(TMR2_MODULE, CLK_CLKSEL1_TMR2_S_HCLK, 0);
     CLK_SetModuleClock(USBD_MODULE, 0, CLK_CLKDIV_USB(3));
+    CLK_SetModuleClock(WDT_MODULE, CLK_CLKSEL1_WDT_S_LIRC, 0);
 
     /* Select UART module clock source */
 
@@ -119,6 +121,7 @@ void SYS_Init(void)
     /* Enable interrupt de-bounce function and select de-bounce sampling cycle time is 1024 clocks of LIRC clock */
 	GPIO_SET_DEBOUNCE_TIME(GPIO_DBCLKSRC_HCLK, GPIO_DBCLKSEL_4);
 	GPIO_ENABLE_DEBOUNCE(PB, BIT14);
+
 }
 
 void UART0_Init()
@@ -292,9 +295,23 @@ static void console_tick(void)
  			break;
 		case 'c':
 			printf("trying to read\n");
-			CLEAR_WRITE();
+/*			CLEAR_WRITE();
 			SET_SCANMEDIA();
 			CLEAR_STOPMOTOR();
+			TIMER_Delay(TIMER2, 1000 * 10);
+			if(IS_MOTORON() == 0) {
+				printf("stopping read, motor isnt on\n");
+				CLEAR_WRITE();
+				CLEAR_SCANMEDIA();
+				SET_STOPMOTOR();
+			}*/
+//			startread = 1;
+			break;
+		case 'v':
+			printf("stopping read\n");
+			CLEAR_WRITE();
+			CLEAR_SCANMEDIA();
+			SET_STOPMOTOR();
 			break;
 		}
 	}
@@ -333,6 +350,16 @@ int main()
     printf("--CPU @ %d MHz\n", SystemCoreClock / 1000000);
     printf("--SPI0 @ %d MHz\n", SPI_GetBusClock(SPI0) / 1000000);
     printf("--SPI1 @ %d MHz\n", SPI_GetBusClock(SPI1) / 1000000);
+	
+	NVIC_SetPriority(USBD_IRQn,2);
+	NVIC_SetPriority(TMR1_IRQn,1);
+	NVIC_SetPriority(GPAB_IRQn,0);
+	NVIC_SetPriority(EINT0_IRQn,0);
+	
+	printf("USBD_IRQn priority: %d\n",NVIC_GetPriority(USBD_IRQn));
+	printf("TMR1_IRQn priority: %d\n",NVIC_GetPriority(TMR1_IRQn));
+	printf("GPAB_IRQn priority: %d\n",NVIC_GetPriority(GPAB_IRQn));
+	printf("EINT0_IRQn priority: %d\n",NVIC_GetPriority(EINT0_IRQn));
 
 	flash_init();
 	sram_init();

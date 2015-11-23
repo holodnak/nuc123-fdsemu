@@ -73,6 +73,27 @@ void EP3_Handler(void);
 //void HID_SetInReport(void);
 //void HID_GetOutReport(uint8_t *pu8EpBuf, uint32_t u32Size);
 
+enum {
+
+    //HID reportIDs
+    ID_RESET=0xf0,
+    ID_UPDATEFIRMWARE=0xf1,
+    ID_SELFTEST=0xf2,
+
+    ID_SPI_READ=1,
+    ID_SPI_READ_STOP,
+    ID_SPI_WRITE,
+
+    ID_READ_IO=0x10,
+    ID_DISK_READ_START,
+    ID_DISK_READ,
+    ID_DISK_WRITE_START,
+    ID_DISK_WRITE,
+	
+	ID_FIRMWARE_UPDATE = ID_UPDATEFIRMWARE,
+
+};
+
 #endif  /* __USBD_HID_H_ */
 
 /*** (C) COPYRIGHT 2014~2015 Nuvoton Technology Corp. ***/
