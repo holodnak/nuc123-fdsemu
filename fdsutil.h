@@ -11,5 +11,6 @@ enum {
 
 int block_decode(uint8_t *dst, uint8_t *src, int *inP, int *outP, int srcSize, int dstSize, int blockSize, char blockType);
 void bin_to_raw03(uint8_t *bin, uint8_t *raw, int binSize, int rawSize);
+uint16_t calc_crc(uint8_t *buf, int size);
 
 #endif

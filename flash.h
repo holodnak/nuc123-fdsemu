@@ -21,9 +21,6 @@ void flash_read_stop(void);
 void flash_read(uint8_t *buf,int len);
 
 void flash_read_disk_header(int block,flash_header_t *header);
-void flash_read_disk_start(int block);
-void flash_read_disk_stop(void);
-void flash_read_disk(uint8_t *data,int len);
 void flash_read_page(int page,uint8_t *buf);
 void flash_read_sector(int block,int sector,uint8_t *buf);
 void flash_write_page(int page,uint8_t *buf);

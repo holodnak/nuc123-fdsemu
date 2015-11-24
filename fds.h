@@ -61,7 +61,7 @@ typedef struct diskread_s {
 } diskread_t;
 
 void fds_init(void);
-int fds_diskread_getdata(uint8_t *buf, int len);
+void fds_diskread_getdata(uint8_t *buf, int len);
 void fds_start_diskread(void);
 void fds_setup_transfer(void);
 void fds_setup_diskread(void);

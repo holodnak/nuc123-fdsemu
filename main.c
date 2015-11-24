@@ -86,11 +86,6 @@ void SYS_Init(void)
     /* Setup SPI1 multi-function pins */
     SYS->GPC_MFP |= SYS_GPC_MFP_PC8_SPI1_SS0 | SYS_GPC_MFP_PC9_SPI1_CLK | SYS_GPC_MFP_PC10_SPI1_MISO0 | SYS_GPC_MFP_PC11_SPI1_MOSI0;
     SYS->ALT_MFP |= SYS_ALT_MFP_PC8_SPI1_SS0 | SYS_ALT_MFP_PC9_SPI1_CLK | SYS_ALT_MFP_PC10_SPI1_MISO0 | SYS_ALT_MFP_PC11_SPI1_MOSI0;
-	
-	SYS->GPB_MFP |= SYS_GPB_MFP_PB9_SPI1_SS1;
-	SYS->GPC_MFP |= SYS_GPC_MFP_PC12_SPI1_MISO1 | SYS_GPC_MFP_PC13_SPI1_MOSI1;
-    SYS->ALT_MFP |= SYS_ALT_MFP_PB9_SPI1_SS1;
-    SYS->ALT_MFP |= SYS_ALT_MFP_PC12_SPI1_MISO1 | SYS_ALT_MFP_PC13_SPI1_MOSI1;
 
 	//int0
 //    SYS->GPB_MFP |= SYS_GPB_MFP_PB14_INT0;
@@ -99,6 +94,9 @@ void SYS_Init(void)
     /* User can use SystemCoreClockUpdate() to calculate SystemCoreClock and cyclesPerUs automatically. */
     SystemCoreClockUpdate();
 
+    GPIO_SetMode(PB, BIT5, GPIO_PMD_OUTPUT);
+	PB5 = 0;
+/*
 	//setup gpio pins for the fds
     GPIO_SetMode(PD, BIT5, GPIO_PMD_INPUT);
     GPIO_SetMode(PD, BIT4, GPIO_PMD_INPUT);
@@ -111,16 +109,13 @@ void SYS_Init(void)
     GPIO_SetMode(PA, BIT11, GPIO_PMD_OUTPUT);
     GPIO_SetMode(PA, BIT12, GPIO_PMD_INPUT);
 //    GPIO_SetMode(PA, BIT13,GPIO_PMD_INPUT);
-    GPIO_SetMode(PB, BIT5, GPIO_PMD_OUTPUT);
-	PB5 = 0;
 
-    /* Configure PB.14 as EINT0 pin and enable interrupt by rising edge trigger */
     GPIO_SetMode(PB, BIT14, GPIO_PMD_INPUT);
     GPIO_EnableEINT0(PB, 14, GPIO_INT_RISING);
-
+*/
     /* Enable interrupt de-bounce function and select de-bounce sampling cycle time is 1024 clocks of LIRC clock */
-	GPIO_SET_DEBOUNCE_TIME(GPIO_DBCLKSRC_HCLK, GPIO_DBCLKSEL_4);
-	GPIO_ENABLE_DEBOUNCE(PB, BIT14);
+//	GPIO_SET_DEBOUNCE_TIME(GPIO_DBCLKSRC_HCLK, GPIO_DBCLKSEL_4);
+//	GPIO_ENABLE_DEBOUNCE(PB, BIT14);
 
 }
 
@@ -143,8 +138,8 @@ void SPI_Init(void)
     /*---------------------------------------------------------------------------------------------------------*/
     /* Configure as a master, clock idle low, 32-bit transaction, drive output on falling clock edge and latch input on rising edge. */
     /* Set IP clock divider. SPI clock rate = 2MHz */
-    SPI_Open(SPI0, SPI_MASTER, SPI_MODE_0, 8, 30000000);
-    SPI_Open(SPI1, SPI_MASTER, SPI_MODE_0, 8, 8000000);
+    SPI_Open(SPI0, SPI_MASTER, SPI_MODE_0, 8, 35000000);
+    SPI_Open(SPI1, SPI_MASTER, SPI_MODE_0, 8, 10000000);
 
     /* Enable the automatic hardware slave select function. Select the SS pin and configure as low-active. */
 //    SPI_EnableAutoSS(SPI0, SPI_SS0, SPI_SS_ACTIVE_LOW);
@@ -295,17 +290,6 @@ static void console_tick(void)
  			break;
 		case 'c':
 			printf("trying to read\n");
-/*			CLEAR_WRITE();
-			SET_SCANMEDIA();
-			CLEAR_STOPMOTOR();
-			TIMER_Delay(TIMER2, 1000 * 10);
-			if(IS_MOTORON() == 0) {
-				printf("stopping read, motor isnt on\n");
-				CLEAR_WRITE();
-				CLEAR_SCANMEDIA();
-				SET_STOPMOTOR();
-			}*/
-//			startread = 1;
 			break;
 		case 'v':
 			printf("stopping read\n");
@@ -337,7 +321,7 @@ int main()
 	/* Open USB controller */
     USBD_Open(&gsInfo, HID_ClassRequest, NULL);
 
-    /*Init Endpoint configuration for HID */
+    /* Init Endpoint configuration for HID */
     HID_Init();
 
     /* Start USB device */

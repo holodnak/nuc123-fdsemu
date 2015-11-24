@@ -277,6 +277,7 @@ void process_send_feature(uint8_t *usbdata,int len)
 	uint8_t *buf = epdata;
 	uint8_t reportid;
 	int i;
+	static int bytes;
 
     USBD_MemCopy((uint8_t *)buf, usbdata, len);
 
@@ -293,8 +294,10 @@ void process_send_feature(uint8_t *usbdata,int len)
 		if(initcs) {
 			spi_deselect_device(SPI_FLASH, 0);
 			spi_select_device(SPI_FLASH, 0);
+			bytes = 0;
 		}
 		spi_write_packet(SPI_FLASH,buf + 4,size);
+		bytes += size;
 		if(holdcs == 0) {
 			spi_deselect_device(SPI_FLASH, 0);
 		}
@@ -327,6 +330,10 @@ void process_send_feature(uint8_t *usbdata,int len)
 	//begin reading the disk
 	else if(reportid == ID_DISK_READ_START) {
 //		fds_setup_diskread();
+
+		//TODO: the above and below lines of code do not work well together when being called back-to-back
+		//why??
+		
 		fds_start_diskread();
 		sequence = 1;
 //		startread = 1;
@@ -357,21 +364,12 @@ int get_feature_report(uint8_t reportid, uint8_t *buf)
 	
 	else if(reportid == ID_DISK_READ) {
 		len = 255;
-//		if(IS_READY() == 0) {
-//			printf("waiting drive buf to be ready\n");
-//			while(IS_READY() == 0);
-//		}
-//		printf("waiting read buf to have data\n");
 		buf[0] = sequence++;
 		fds_diskread_getdata(buf + 1,254);
 		if(IS_READY() == 0) {
+			fds_stop_diskread();
 			len = 1;
 		}
-//		while(readbufready == 0) {}
-//		printf("putting read buf out usb\n");
-//		buf = readbuf[readbufready & 1];
-//		readbufready = 0;
-//		memcpy(usbbuf,buf,255);
 	}
 
 	else {

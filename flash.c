@@ -3,23 +3,66 @@
 #include "flash.h"
 #include "spiutil.h"
 
+enum {
+	ID_UNKNOWN = 0,		//unknown flash type
+	ID_FLASH,			//standard flash chip
+	ID_DATAFLASH,		//dataflash chip
+};
+
+enum {
+	CMD_DF_READ_STATUS = 0xD7,
+	CMD_DF_READ = 0x0B,
+};
+
 typedef struct flashchip_s {
-	uint8_t manufacturer, device;
+	uint8_t type, manufacturer, device1, device2;
 	int size;
 } flashchip_t;
 
 const flashchip_t flashchips[] = {
-	{0xEF, 0x13, 0x100000}, 	//1mbyte
-	{0x01, 0x16, 0x800000}, 	//8mbyte
-	{0x00, 0x00, -1}			//end of list
+	//default unknown chip
+	{ID_UNKNOWN,   0x00, 0x00, 0x00, 0x100000}, 	//1mbyte, default small size
+	
+	//flash chips
+	{ID_FLASH,     0xEF, 0x13, 0x00, 0x100000}, 	//1mbyte
+	{ID_FLASH,     0x01, 0x16, 0x00, 0x800000}, 	//8mbyte
+
+	//dataflash chips
+	{ID_DATAFLASH, 0x1F, 0x27, 0x01, 0x400000}, 	//AT45DB321E - 4mbyte
+
+	{0, 0, 0, 0, -1}	//end of list
 };
 
-static uint8_t data[4];
+static flashchip_t *chip = 0;
+
+//dataflash specific functions
+uint8_t dataflash_read_status(uint8_t *buf)
+{
+	uint8_t data[4] = {0xD7};
+
+	spi_select_device(SPI_FLASH, 0);
+	spi_write_packet(SPI_FLASH, data, 1);
+	spi_read_packet(SPI_FLASH, buf, 2);
+	spi_deselect_device(SPI_FLASH, 0);
+	return(data[0]);
+}
+
+void dataflash_busy_wait(void)
+{
+	uint8_t data[4] = {0xD7};
+
+	spi_select_device(SPI_FLASH, 0);
+	spi_write_packet(SPI_FLASH, data, 1);
+	do {
+		spi_read_packet(SPI_FLASH, data, 1);
+	} while((data[0] & 0x80) == 0);
+	spi_deselect_device(SPI_FLASH, 0);
+}
 
 //keep waiting for chip to become not busy
 static void flash_busy_wait(void)
 {
-	data[0] = 0x05;
+	uint8_t data[4] = {0x05};
 
 	spi_select_device(SPI_FLASH, 0);
 	spi_write_packet(SPI_FLASH, data, 1);
@@ -29,35 +72,101 @@ static void flash_busy_wait(void)
 	spi_deselect_device(SPI_FLASH, 0);
 }
 
+static flashchip_t *flash_find_chip()
+{
+	uint8_t data[4];
+	int i;
+
+	//read flash chip id
+	flash_get_id(data);
+	printf("--flash manufacturer id: $%02X, device id: $%04X\r\n",data[0],(data[1] << 8) | data[2]);
+	
+	//search table of chips for this chip
+	chip = 0;
+	for(i=0;flashchips[i].size != -1;i++) {
+		if(data[0] == flashchips[i].manufacturer && data[1] == flashchips[i].device1 && data[2] == flashchips[i].device2) {
+			return((flashchip_t*)&flashchips[i]);
+		}
+	}
+	return(0);
+}
+
+//read flash chip id
 void flash_get_id(uint8_t *buf)
 {
-	data[0] = 0x9F;
+	uint8_t data[4] = {0x9F};
+
 	spi_select_device(SPI_FLASH, 0);
 	spi_write_packet(SPI_FLASH, data, 1);
 	spi_read_packet(SPI_FLASH, buf, 3);
 	spi_deselect_device(SPI_FLASH, 0);
 }
 
+//initialize flash chip stuff
 void flash_init(void)
 {
+	uint8_t data[4];
+
+	//get flash chip info
+	chip = flash_find_chip();
+	if(chip == 0) {
+		printf("flash_init: flash chip not found in list, using default info\n");
+		chip = (flashchip_t*)flashchips;
+	}
+
+	//if this is a dataflash chip, ensure it is setup properly
+	if(chip->type == ID_DATAFLASH) {
+		printf("flash_init: dataflash chip detected\n");
+		dataflash_read_status(data);
+		if((data[0] & 1) == 0) {
+			printf("flash_init: dataflash is in 528 byte page size, setting to 512...\n");
+			data[0] = 0x3D;
+			data[1] = 0x2A;
+			data[2] = 0x80;
+			data[3] = 0xA6;
+			spi_select_device(SPI_FLASH, 0);
+			spi_write_packet(SPI_FLASH, data, 4);
+			spi_deselect_device(SPI_FLASH, 0);
+		}
+		else {
+			printf("flash_init: dataflash configured for 512 byte pages\n");
+		}
+	}
+	
+	//regular flash chip
+	else {
+		printf("flash_init: flash chip detected\n");		
+	}
 	flash_reset();
-	flash_get_id(data);
-	printf("--flash manufacturer id: $%02X, device id: $%04X\r\n",data[0],(data[1] << 8) | data[2]);
 }
 
 void flash_reset(void)
 {
-	//enable reset
-	data[0] = 0x66;
-	spi_select_device(SPI_FLASH, 0);
-	spi_write_packet(SPI_FLASH, data, 1);
-	spi_deselect_device(SPI_FLASH, 0);
+	uint8_t data[4] = {0,0,0,0};
 
-	//reset
-	data[0] = 0x99;
-	spi_select_device(SPI_FLASH, 0);
-	spi_write_packet(SPI_FLASH, data, 1);
-	spi_deselect_device(SPI_FLASH, 0);
+	//dataflash chip
+	if(chip->type == ID_DATAFLASH) {
+		//reset
+		data[0] = 0xF0;
+		spi_select_device(SPI_FLASH, 0);
+		spi_write_packet(SPI_FLASH, data, 4);
+		spi_deselect_device(SPI_FLASH, 0);
+	}
+
+	//flash chip
+	else {
+		//enable reset
+		data[0] = 0x66;
+		spi_select_device(SPI_FLASH, 0);
+		spi_write_packet(SPI_FLASH, data, 1);
+		spi_deselect_device(SPI_FLASH, 0);
+
+		//reset
+		data[0] = 0x99;
+		spi_select_device(SPI_FLASH, 0);
+		spi_write_packet(SPI_FLASH, data, 1);
+		spi_deselect_device(SPI_FLASH, 0);
+	}
 }
 
 void flash_read_start(uint32_t addr)
@@ -71,7 +180,7 @@ void flash_read_start(uint32_t addr)
 	data[3] = (uint8_t)(addr);
 	spi_select_device(SPI_FLASH, 0);
 	spi_write_packet(SPI_FLASH, data, 4);
-	printf("flash_read_start: addr = $%08X\n",addr);
+//	printf("flash_read_start: addr = $%08X\n",addr);
 }
 
 void flash_read_stop(void)
@@ -82,45 +191,13 @@ void flash_read_stop(void)
 void flash_read(uint8_t *buf,int len)
 {
 	spi_read_packet(SPI_FLASH, buf, len);
-//	hexdump("spiread",buf,len);
 }
 
 void flash_read_disk_header(int block,flash_header_t *header)
 {
-	uint8_t data[4];
-
-	//read the data
-	data[0] = 0x03;
-	data[1] = block;
-	data[2] = 0x00;
-	data[3] = 0x00;
-	spi_select_device(SPI_FLASH, 0);
-	spi_write_packet(SPI_FLASH, data, 4);
-	spi_read_packet(SPI_FLASH, (uint8_t*)header, 256);
-	spi_deselect_device(SPI_FLASH, 0);
-}
-
-void flash_read_disk_start(int block)
-{
-	uint8_t data[4];
-
-	//read data
-	data[0] = 0x03;
-	data[1] = block;
-	data[2] = 0x01;
-	data[3] = 0x00;
-	spi_select_device(SPI_FLASH, 0);
-	spi_write_packet(SPI_FLASH, data, 4);
-}
-
-void flash_read_disk_stop(void)
-{
-	spi_deselect_device(SPI_FLASH, 0);
-}
-
-void flash_read_disk(uint8_t *data,int len)
-{
-	spi_read_packet(SPI_FLASH, data, len);
+	flash_read_start(block * 0x10000);
+	flash_read((uint8_t*)header,256);
+	flash_read_stop();
 }
 
 void flash_read_page(int page,uint8_t *buf)
@@ -231,6 +308,8 @@ void flash_erase_block(int block)
 
 void flash_erase_sector(int block,int sector)
 {
+	uint8_t data[4];
+
 	//enable writes
 	data[0] = 0x06;
 	spi_select_device(SPI_FLASH, 0);
@@ -252,29 +331,7 @@ void flash_erase_sector(int block,int sector)
 
 int flash_get_size(void)
 {
-	int i;
-
-	//read flash id
-	data[0] = 0x90;
-	data[1] = 0x00;
-	data[2] = 0x00;
-	data[3] = 0x00;
-	spi_select_device(SPI_FLASH, 0);
-	spi_write_packet(SPI_FLASH, data, 4);
-	spi_read_packet(SPI_FLASH, data, 2);
-	spi_deselect_device(SPI_FLASH, 0);
-
-	printf("flash_get_size: manufacturer = $%02X, device = $%02X\n",data[0],data[1]);
-	
-	//search table of chips
-	for(i=0;flashchips[i].size != -1;i++) {
-		if(data[0] == flashchips[i].manufacturer && data[1] == flashchips[i].device) {
-			return(flashchips[i].size);
-		}
-	}
-	
-	//flashchip not found
-	return(-1);
+	return(chip->size);
 }
 
 int flash_get_total_blocks(void)
@@ -293,7 +350,7 @@ int flash_find_empty_block(void)
 	
 	for(i=0;i<blocks;i++) {
 		flash_read_disk_header(i,&header);
-		if(header.name[0] == 0xFF) {
+		if((uint8_t)header.name[0] == 0xFF) {
 			printf("block %X: empty\r\n",i);
 		}
 		else {

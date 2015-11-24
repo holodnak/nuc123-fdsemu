@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 #include "NUC123.h"
 #include "fds.h"
 #include "fdsutil.h"
@@ -22,6 +23,10 @@ PIN 47 = rate
 
 uint8_t sectorbuf[4096];
 uint8_t decodebuf[DECODEBUFSIZE];
+
+#define PAGESIZE	512
+
+uint8_t pagebuf[2][PAGESIZE];
 
 struct write_s {
 	int diskpos;			//position on disk where write was started
@@ -66,7 +71,7 @@ void EINT0_IRQHandler(void)
 {
     GPIO_CLR_INT_FLAG(PB, BIT14);
 
-	printf("EINT0_IRQHandler");
+//	printf("EINT0_IRQHandler");
 	if(IS_WRITE()) {
 		int ra = TIMER_GetCounter(TIMER0);
 
@@ -87,6 +92,7 @@ void GPAB_IRQHandler(void)
     if(GPIO_GET_INT_FLAG(PA, BIT11)) {
 		int ra;
 
+//		printf("GPAB_IRQHandler");
 		GPIO_CLR_INT_FLAG(PA, BIT11);
 		ra = TIMER_GetCounter(TIMER0);
 		TIMER0->TCSR = TIMER_TCSR_CRST_Msk;
@@ -157,7 +163,7 @@ static void begin_transfer(void)
 
 	printf("beginning transfer...\r\n");
 
-	flash_read_disk_start(diskblock);
+	flash_read_start(diskblock * 0x10000 + 256);
 	needbyte = 0;
 	count = 7;
 	havewrite = 0;
@@ -170,6 +176,7 @@ static void begin_transfer(void)
 	}
 
     NVIC_DisableIRQ(USBD_IRQn);
+    NVIC_DisableIRQ(GPAB_IRQn);
     NVIC_EnableIRQ(EINT0_IRQn);
     NVIC_EnableIRQ(TMR1_IRQn);	
 	TIMER_Start(TIMER0);
@@ -188,7 +195,7 @@ static void begin_transfer(void)
 			data2 = 0;
 			leadin -= 8;
 			if(leadin <= 0) {
-				flash_read_disk((uint8_t*)&data2,1);
+				flash_read((uint8_t*)&data2,1);
 				bytes++;
 				break;
 			}
@@ -222,7 +229,7 @@ static void begin_transfer(void)
 				}
 				if(needbyte) {
 					needbyte = 0;
-					flash_read_disk((uint8_t*)&data2,1);
+					flash_read((uint8_t*)&data2,1);
 					bytes++;
 					if(bytes >= 0xFF00) {
 						printf("reached end of data block, something went wrong...\r\n");
@@ -240,7 +247,7 @@ static void begin_transfer(void)
 		}
 		if(needbyte) {
 			needbyte = 0;
-			flash_read_disk((uint8_t*)&data2,1);
+			flash_read((uint8_t*)&data2,1);
 			bytes++;
 			if(bytes >= 0xFF00) {
 				printf("reached end of data block, something went wrong...\r\n");
@@ -255,7 +262,7 @@ static void begin_transfer(void)
 	TIMER_Stop(TIMER1);
     NVIC_EnableIRQ(USBD_IRQn);
 
-	flash_read_disk_stop();
+	flash_read_stop();
 	
 	//needs to be cleaned up/optimized
 	if(write_num) {
@@ -302,54 +309,54 @@ int find_disklist()
 	int count = 0;
 	uint8_t byte;
 
-	flash_read_disk_start(0);
+	flash_read_start(0 + 256);
 	for(pos=0;pos<65500;) {
 
 		//read a byte from the flash
-		flash_read_disk((uint8_t*)&byte,1);
+		flash_read((uint8_t*)&byte,1);
 		pos++;
 		
 		//first byte matches
 		if(byte == diskliststr[0]) {
 			count = 1;
 			do {
-				flash_read_disk((uint8_t*)&byte,1);
+				flash_read((uint8_t*)&byte,1);
 				pos++;
 			} while(byte == diskliststr[count++]);
 			if(count == 18) {
 				printf("found disklist block header at %d (count = %d)\n",pos - count,count);
 
 				//skip over the crc
-				flash_read_disk((uint8_t*)&byte,1);
-				flash_read_disk((uint8_t*)&byte,1);
+				flash_read((uint8_t*)&byte,1);
+				flash_read((uint8_t*)&byte,1);
 				pos += 2;
 
 				//skip the gap
 				do {
-					flash_read_disk((uint8_t*)&byte,1);
+					flash_read((uint8_t*)&byte,1);
 					pos++;
 				} while(byte == 0 && pos < 65500);
 
 				//make sure this is a blocktype of 4
 				if(byte == 0x80) {
-					flash_read_disk((uint8_t*)&byte,1);
+					flash_read((uint8_t*)&byte,1);
 					pos++;
 					if(byte == 4) {
-						flash_read_disk((uint8_t*)&byte,1);
+						flash_read((uint8_t*)&byte,1);
 						printf("hard coded disk count = %d\n",byte);
-						flash_read_disk_stop();
+						flash_read_stop();
 						return(pos);
 					}
 				}
 			}
 		}
 	}
-	flash_read_disk_stop();
+	flash_read_stop();
 	return(-1);
 }
 
-uint8_t *disklistblock = decodebuf + 8192;
-uint8_t *disklist = decodebuf + 8192 + 1;
+uint8_t *disklistblock = decodebuf + 4096;
+uint8_t *disklist = decodebuf + 4096 + 1;
 
 void create_disklist(void)
 {
@@ -407,7 +414,7 @@ static void begin_transfer_loader(void)
 		create_disklist();
 	}
 
-	flash_read_disk_start(diskblock);
+	flash_read_start(diskblock * 0x10000);
 	needbyte = 0;
 	count = 7;
 	havewrite = 0;
@@ -420,6 +427,7 @@ static void begin_transfer_loader(void)
 	}
 
     NVIC_DisableIRQ(USBD_IRQn);
+    NVIC_DisableIRQ(GPAB_IRQn);
     NVIC_EnableIRQ(EINT0_IRQn);
     NVIC_EnableIRQ(TMR1_IRQn);	
 	TIMER_Start(TIMER0);
@@ -438,7 +446,7 @@ static void begin_transfer_loader(void)
 			data2 = 0;
 			leadin -= 8;
 			if(leadin <= 0) {
-				flash_read_disk((uint8_t*)&data2,1);
+				flash_read((uint8_t*)&data2,1);
 				bytes++;
 				break;
 			}
@@ -462,7 +470,7 @@ static void begin_transfer_loader(void)
 				}
 				if(needbyte) {
 					needbyte = 0;
-					flash_read_disk((uint8_t*)&data2,1);
+					flash_read((uint8_t*)&data2,1);
 					bytes++;
 					if(bytes >= 0xFF00) {
 						printf("reached end of data block, something went wrong...\r\n");
@@ -480,7 +488,7 @@ static void begin_transfer_loader(void)
 		}
 		if(needbyte) {
 			needbyte = 0;
-			flash_read_disk((uint8_t*)&data2,1);
+			flash_read((uint8_t*)&data2,1);
 			if(bytes >= disklistpos) {
 				int n = bytes - disklistpos;
 				if(n < (4096 + 2)) {
@@ -503,7 +511,7 @@ static void begin_transfer_loader(void)
 	TIMER_Stop(TIMER1);
     NVIC_EnableIRQ(USBD_IRQn);
 
-	flash_read_disk_stop();
+	flash_read_stop();
 	
 	//loader
 	if(write_num) {
@@ -549,6 +557,16 @@ void fds_start_diskread(void)
     NVIC_EnableIRQ(GPAB_IRQn);
 }
 
+void fds_stop_diskread(void)
+{
+	TIMER_Stop(TIMER0);
+    NVIC_DisableIRQ(GPAB_IRQn);
+
+	CLEAR_WRITE();
+	CLEAR_SCANMEDIA();
+	SET_STOPMOTOR();
+}
+
 static int get_buf_size()
 {
 	int ret = 0;
@@ -563,28 +581,16 @@ static int get_buf_size()
 	return(ret);
 }
 
-int fds_diskread_getdata(uint8_t *bufbuf, int len)
+void fds_diskread_getdata(uint8_t *bufbuf, int len)
 {
-	int ret = 0;
 	int t,v,w;
-	static int wasready = 0;
-	static int poop = 0;
 
-	if(IS_READY() == 0 && needfinish == 0) {
-		if(wasready) {
-			printf("drive no longer ready.\n");
-			wasready = 0;
-			needfinish = 1;
-			ret = 1;
-		}
-		else {
-			printf("waiting drive to be ready\n");
-			while(IS_READY() == 0);
-			wasready = 1;
-		}
+	if(IS_READY() == 0) {
+		printf("waiting drive to be ready\n");
+		while(IS_READY() == 0);
 	}
 	
-	while(get_buf_size() < 256) {
+	while(get_buf_size() < len) {
 //		printf("waiting for data\n");
 	}
 
@@ -594,7 +600,6 @@ int fds_diskread_getdata(uint8_t *bufbuf, int len)
 	if(t >= DECODEBUFSIZE) {
 		v = DECODEBUFSIZE - sentbufpos;
 		w = len - v;
-//		while(bufpos >= sentbufpos || bufpos < w);
 		memcpy(bufbuf,decodebuf + sentbufpos,v);
 		memcpy(bufbuf + v,decodebuf,w);
 		sentbufpos = w;
@@ -602,24 +607,28 @@ int fds_diskread_getdata(uint8_t *bufbuf, int len)
 	
 	//this read will be one unbroken chunk of the buffer
 	else {
-//		while(bufpos < (sentbufpos + len));
 		memcpy(bufbuf,decodebuf + sentbufpos,len);
 		sentbufpos += len;
 	}
-//	if(bufpos == sentbufpos
-	return(ret);
 }
 
 void fds_init(void)
 {
-	CLEAR_WRITABLE();
-	CLEAR_READY();
-	CLEAR_MEDIASET();
-	CLEAR_MOTORON();
-
-//	fds_insert_disk(0);
+	int usbattached = USBD_IS_ATTACHED();
 	
-	fds_setup_diskread();
+	usbattached = 0;
+	if(usbattached) {
+		fds_setup_diskread();
+		CLEAR_WRITE();
+	}
+	else {
+		fds_setup_transfer();
+		CLEAR_WRITABLE();
+		CLEAR_READY();
+		CLEAR_MEDIASET();
+		CLEAR_MOTORON();
+		fds_insert_disk(0);
+	}
 }
 
 enum {
@@ -646,7 +655,7 @@ void fds_setup_transfer(void)
     GPIO_SetMode(PA, BIT11, GPIO_PMD_OUTPUT);
     GPIO_SetMode(PB, BIT14, GPIO_PMD_INPUT);
 
-	GPIO_DisableEINT1(PA, 11);
+	GPIO_DisableInt(PA, 11);
     GPIO_EnableEINT0(PB, 14, GPIO_INT_RISING);
 
 	SYS_LockReg();
@@ -673,7 +682,7 @@ void fds_setup_diskread(void)
 	GPIO_SetMode(PB, BIT14, GPIO_PMD_OUTPUT);	//write data
 
 	GPIO_DisableEINT0(PB, 14);
-	GPIO_EnableEINT1(PA, 11, GPIO_INT_RISING);
+	GPIO_EnableInt(PA, 11, GPIO_INT_RISING);
 
 	SYS_LockReg();
 
@@ -799,7 +808,8 @@ void fds_tick(void)
 void fds_insert_disk(int block)
 {
 	diskblock = block;
-	printf("copied disk image to sram, inserting disk\r\n");
+	fds_setup_transfer();
+	printf("inserting disk at block %d\r\n",block);
 	SET_MEDIASET();
 	SET_WRITABLE();
 }
