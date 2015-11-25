@@ -113,8 +113,8 @@ void sram_init_device(int ss)
 
 void sram_init(void)
 {
-	sram_init_device(0);
-	sram_test(0);
+//	sram_init_device(0);
+//	sram_test(0);
 }
 
 void sram_read_start(uint32_t addr)

@@ -16,15 +16,16 @@ void flash_get_id(uint8_t *buf);
 void flash_init(void);
 void flash_reset(void);
 
+void flash_busy_wait(void);
+
 void flash_read_start(uint32_t addr);
 void flash_read_stop(void);
 void flash_read(uint8_t *buf,int len);
 
 void flash_read_disk_header(int block,flash_header_t *header);
 void flash_read_page(int page,uint8_t *buf);
-void flash_read_sector(int block,int sector,uint8_t *buf);
 void flash_write_page(int page,uint8_t *buf);
-void flash_write_sector(int block,int sector,uint8_t *buf);
+
 void flash_copy_block(int src,int dest);
 void flash_erase_block(int block);
 void flash_erase_sector(int block,int sector);

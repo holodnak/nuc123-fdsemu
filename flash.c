@@ -36,39 +36,42 @@ const flashchip_t flashchips[] = {
 static flashchip_t *chip = 0;
 
 //dataflash specific functions
-uint8_t dataflash_read_status(uint8_t *buf)
+uint8_t dataflash_read_status()
 {
 	uint8_t data[4] = {0xD7};
 
 	spi_select_device(SPI_FLASH, 0);
 	spi_write_packet(SPI_FLASH, data, 1);
-	spi_read_packet(SPI_FLASH, buf, 2);
+	spi_read_packet(SPI_FLASH, data, 1);
 	spi_deselect_device(SPI_FLASH, 0);
 	return(data[0]);
 }
 
-void dataflash_busy_wait(void)
-{
-	uint8_t data[4] = {0xD7};
-
-	spi_select_device(SPI_FLASH, 0);
-	spi_write_packet(SPI_FLASH, data, 1);
-	do {
-		spi_read_packet(SPI_FLASH, data, 1);
-	} while((data[0] & 0x80) == 0);
-	spi_deselect_device(SPI_FLASH, 0);
-}
-
 //keep waiting for chip to become not busy
-static void flash_busy_wait(void)
+void flash_busy_wait(void)
 {
 	uint8_t data[4] = {0x05};
 
 	spi_select_device(SPI_FLASH, 0);
-	spi_write_packet(SPI_FLASH, data, 1);
-	do {
-		spi_read_packet(SPI_FLASH, data, 1);
-	} while(data[0] & 1);
+
+	//dataflash busy wait
+	if(chip->type == ID_DATAFLASH) {
+		data[0] = 0xD7;
+		spi_write_packet(SPI_FLASH, data, 1);
+		do {
+			spi_read_packet(SPI_FLASH, data, 1);
+		} while((data[0] & 0x80) == 0);
+	}
+
+	//flash busy wait
+	else {
+		data[0] = 0x05;
+		spi_write_packet(SPI_FLASH, data, 1);
+		do {
+			spi_read_packet(SPI_FLASH, data, 1);
+		} while(data[0] & 1);
+	}
+
 	spi_deselect_device(SPI_FLASH, 0);
 }
 
@@ -117,8 +120,7 @@ void flash_init(void)
 	//if this is a dataflash chip, ensure it is setup properly
 	if(chip->type == ID_DATAFLASH) {
 		printf("flash_init: dataflash chip detected\n");
-		dataflash_read_status(data);
-		if((data[0] & 1) == 0) {
+		if((dataflash_read_status() & 1) == 0) {
 			printf("flash_init: dataflash is in 528 byte page size, setting to 512...\n");
 			data[0] = 0x3D;
 			data[1] = 0x2A;
@@ -200,72 +202,52 @@ void flash_read_disk_header(int block,flash_header_t *header)
 	flash_read_stop();
 }
 
+void flash_read_data(int addr,uint8_t *buf)
+{
+	uint8_t data[4];
+
+	//read the data
+	data[0] = 0x03;
+	data[1] = addr >> 16;
+	data[2] = addr >> 8;
+	data[3] = addr;
+	spi_select_device(SPI_FLASH, 0);
+	spi_write_packet(SPI_FLASH, data, 4);
+	spi_read_packet(SPI_FLASH, buf, 512);
+	spi_deselect_device(SPI_FLASH, 0);
+	printf("flash_read_data: reading from %d (%X %X %X)\n",addr,data[1],data[2],data[3]);
+}
+
 void flash_read_page(int page,uint8_t *buf)
 {
 	uint8_t data[4];
 
 	//read the data
 	data[0] = 0x03;
-	data[1] = page >> 8;
-	data[2] = page & 0xFF;
+	data[1] = page >> 7;
+	data[2] = (page << 1);
 	data[3] = 0x00;
 	spi_select_device(SPI_FLASH, 0);
 	spi_write_packet(SPI_FLASH, data, 4);
-	spi_read_packet(SPI_FLASH, buf, 256);
+	spi_read_packet(SPI_FLASH, buf, 512);
 	spi_deselect_device(SPI_FLASH, 0);
-}
-
-void flash_read_sector(int block,int sector,uint8_t *buf)
-{
-	int i;
-	int page;
-	
-	block &= 0xFF;
-	sector &= 0xF;
-	page = (block << 8) | (sector << 4);
-	printf("reading sector %d from block %d\n",sector,block);
-	for(i=0;i<16;i++) {
-		flash_read_page(page,buf + (i * 256));
-		page++;
-	}
+//	printf("flash_read_page: reading page %d (%X %X %X)\n",page,data[1],data[2],data[3]);
 }
 
 void flash_write_page(int page,uint8_t *buf)
 {
 	uint8_t data[4];
 
-	//enable writes
-	data[0] = 0x06;
-	spi_select_device(SPI_FLASH, 0);
-	spi_write_packet(SPI_FLASH, data, 1);
-	spi_deselect_device(SPI_FLASH, 0);
-
 	//write the data
-	data[0] = 0x02;
-	data[1] = (uint8_t)(page >> 8);
-	data[2] = (uint8_t)(page & 0xFF);
+	data[0] = 0x82;
+	data[1] = (uint8_t)(page >> 7);
+	data[2] = (uint8_t)(page << 1);
 	data[3] = 0x00;
 	spi_select_device(SPI_FLASH, 0);
 	spi_write_packet(SPI_FLASH, data, 4);
-	spi_write_packet(SPI_FLASH, buf, 256);
+	spi_write_packet(SPI_FLASH, buf, 512);
 	spi_deselect_device(SPI_FLASH, 0);
-	
-	flash_busy_wait();
-}
-
-void flash_write_sector(int block,int sector,uint8_t *buf)
-{
-	int i;
-	int page;
-	
-	block &= 0xFF;
-	sector &= 0xF;
-	page = (block << 8) | (sector << 4);
-	flash_erase_sector(block,sector);
-	for(i=0;i<16;i++) {
-		flash_write_page(page,buf + (i * 256));
-		page++;
-	}
+//	printf("flash_write_page: writing page %d\n",page);
 }
 
 void flash_copy_block(int src,int dest)
@@ -281,6 +263,19 @@ void flash_copy_block(int src,int dest)
 		flash_write_page(i + dest,buf);
 	}
 	printf("flash_copy_block: copied %X to %X\n",src >> 8,dest >> 8);
+}
+
+void flash_chip_erase()
+{
+	uint8_t data[4] = {0xC7, 0x94, 0x80, 0x9A};
+
+	//enable writes
+	spi_select_device(SPI_FLASH, 0);
+	spi_write_packet(SPI_FLASH, data, 4);
+	spi_deselect_device(SPI_FLASH, 0);
+
+	//wait for it to finish
+	flash_busy_wait();
 }
 
 void flash_erase_block(int block)

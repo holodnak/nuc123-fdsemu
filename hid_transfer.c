@@ -334,7 +334,7 @@ void process_send_feature(uint8_t *usbdata,int len)
 		//TODO: the above and below lines of code do not work well together when being called back-to-back
 		//why??
 		
-		fds_start_diskread();
+//		fds_start_diskread();
 		sequence = 1;
 //		startread = 1;
 //		printf("process_send_feature: ID_DISK_READ_START\n");
@@ -365,9 +365,9 @@ int get_feature_report(uint8_t reportid, uint8_t *buf)
 	else if(reportid == ID_DISK_READ) {
 		len = 255;
 		buf[0] = sequence++;
-		fds_diskread_getdata(buf + 1,254);
+//		fds_diskread_getdata(buf + 1,254);
 		if(IS_READY() == 0) {
-			fds_stop_diskread();
+//			fds_stop_diskread();
 			len = 1;
 		}
 	}

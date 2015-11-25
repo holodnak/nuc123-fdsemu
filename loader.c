@@ -14,54 +14,54 @@ int find_disklist()
 	int count = 0;
 	uint8_t byte;
 
-	flash_read_disk_start(0);
+	flash_read_start(0 + 256);
 	for(pos=0;pos<65500;) {
 
 		//read a byte from the flash
-		flash_read_disk((uint8_t*)&byte,1);
+		flash_read((uint8_t*)&byte,1);
 		pos++;
 		
 		//first byte matches
 		if(byte == diskliststr[0]) {
 			count = 1;
 			do {
-				flash_read_disk((uint8_t*)&byte,1);
+				flash_read((uint8_t*)&byte,1);
 				pos++;
 			} while(byte == diskliststr[count++]);
 			if(count == 18) {
 				printf("found disklist block header at %d (count = %d)\n",pos - count,count);
 
 				//skip over the crc
-				flash_read_disk((uint8_t*)&byte,1);
-				flash_read_disk((uint8_t*)&byte,1);
+				flash_read((uint8_t*)&byte,1);
+				flash_read((uint8_t*)&byte,1);
 				pos += 2;
 
 				//skip the gap
 				do {
-					flash_read_disk((uint8_t*)&byte,1);
+					flash_read((uint8_t*)&byte,1);
 					pos++;
 				} while(byte == 0 && pos < 65500);
 
 				//make sure this is a blocktype of 4
 				if(byte == 0x80) {
-					flash_read_disk((uint8_t*)&byte,1);
+					flash_read((uint8_t*)&byte,1);
 					pos++;
 					if(byte == 4) {
-						flash_read_disk((uint8_t*)&byte,1);
+						flash_read((uint8_t*)&byte,1);
 						printf("hard coded disk count = %d\n",byte);
-						flash_read_disk_stop();
+						flash_read_stop();
 						return(pos);
 					}
 				}
 			}
 		}
 	}
-	flash_read_disk_stop();
+	flash_read_stop();
 	return(-1);
 }
 
-uint8_t *disklistblock = decodebuf + 8192;
-uint8_t *disklist = decodebuf + 8192 + 1;
+uint8_t *disklistblock = decodebuf + 4096;
+uint8_t *disklist = decodebuf + 4096 + 1;
 
 void create_disklist(void)
 {
@@ -100,7 +100,6 @@ void create_disklist(void)
 
 	//correct
 	crc = calc_crc(disklistblock,4096 + 1 + 2);
-	printf("calc_crc() returned %X\n",crc);
 	disklist[4096] = (uint8_t)(crc >> 0);
 	disklist[4097] = (uint8_t)(crc >> 8);
 }
@@ -120,7 +119,7 @@ static void begin_transfer_loader(void)
 		create_disklist();
 	}
 
-	flash_read_disk_start(diskblock);
+	flash_read_start(diskblock * 0x10000);
 	needbyte = 0;
 	count = 7;
 	havewrite = 0;
@@ -133,6 +132,7 @@ static void begin_transfer_loader(void)
 	}
 
     NVIC_DisableIRQ(USBD_IRQn);
+    NVIC_DisableIRQ(GPAB_IRQn);
     NVIC_EnableIRQ(EINT0_IRQn);
     NVIC_EnableIRQ(TMR1_IRQn);	
 	TIMER_Start(TIMER0);
@@ -151,7 +151,7 @@ static void begin_transfer_loader(void)
 			data2 = 0;
 			leadin -= 8;
 			if(leadin <= 0) {
-				flash_read_disk((uint8_t*)&data2,1);
+				flash_read((uint8_t*)&data2,1);
 				bytes++;
 				break;
 			}
@@ -167,15 +167,15 @@ static void begin_transfer_loader(void)
 			TIMER0->TCSR = TIMER_TCSR_CRST_Msk;
 			TIMER0->TCMPR = 0xFFFFFF;
 			TIMER0->TCSR = TIMER_CONTINUOUS_MODE | 7 | TIMER_TCSR_TDR_EN_Msk | TIMER_TCSR_CEN_Msk;
-			decode(0,0,0,0);
+			decode(0,0,0);
 			while(IS_WRITE()) {
 				if(havewrite) {
 					havewrite = 0;
-					decode(decodebuf + decodelen,raw_to_raw03_byte(writelen),DECODEBUFSIZE,&len);
+					decode(decodebuf + decodelen,raw_to_raw03_byte(writelen),&len);
 				}
 				if(needbyte) {
 					needbyte = 0;
-					flash_read_disk((uint8_t*)&data2,1);
+					flash_read((uint8_t*)&data2,1);
 					bytes++;
 					if(bytes >= 0xFF00) {
 						printf("reached end of data block, something went wrong...\r\n");
@@ -193,7 +193,7 @@ static void begin_transfer_loader(void)
 		}
 		if(needbyte) {
 			needbyte = 0;
-			flash_read_disk((uint8_t*)&data2,1);
+			flash_read((uint8_t*)&data2,1);
 			if(bytes >= disklistpos) {
 				int n = bytes - disklistpos;
 				if(n < (4096 + 2)) {
@@ -216,7 +216,7 @@ static void begin_transfer_loader(void)
 	TIMER_Stop(TIMER1);
     NVIC_EnableIRQ(USBD_IRQn);
 
-	flash_read_disk_stop();
+	flash_read_stop();
 	
 	//loader
 	if(write_num) {
@@ -240,5 +240,4 @@ static void begin_transfer_loader(void)
 
 	printf("transferred %d bytes\r\n",bytes);
 }
-
 */
