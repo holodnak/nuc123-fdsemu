@@ -470,11 +470,6 @@
               <FilePath>..\fdsutil.c</FilePath>
             </File>
             <File>
-              <FileName>loader.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\loader.c</FilePath>
-            </File>
-            <File>
               <FileName>diskrw.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\diskrw.c</FilePath>

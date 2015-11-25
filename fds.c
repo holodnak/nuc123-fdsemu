@@ -6,6 +6,7 @@
 #include "flash.h"
 #include "spiutil.h"
 #include "fifo.h"
+#include "main.h"
 
 /*
 PIN 43 = -write
@@ -298,6 +299,8 @@ static void begin_transfer(void)
 
 	//activate ready signal
 	SET_READY();
+	
+	LED_RED(1);
 
 	//transfer lead-in
 	while(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
@@ -334,6 +337,7 @@ static void begin_transfer(void)
 			uint8_t byte;
 			int writelen = 0;
 
+			LED_GREEN(0);
 			writepos = pagepos;
 			writepage = curpage;
 			writeptr = pagebuf[writepage].data;
@@ -398,6 +402,7 @@ static void begin_transfer(void)
 				writelen++;
 				writeptr[writepos] = decoded[0];
 			}
+			LED_GREEN(1);
 			printf("write ended at %X bytes, %d bytes written\n",bytes,writelen);
 		}
 
@@ -440,6 +445,7 @@ static void begin_transfer(void)
 	//clear the ready signal
 	CLEAR_READY();
 
+	LED_RED(0);
 	printf("transferred %d bytes\r\n",bytes);
 }
 

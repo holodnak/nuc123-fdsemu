@@ -14,12 +14,12 @@
 #include "sram.h"
 #include "fds.h"
 #include "hid_transfer.h"
-#include "version.h"
-#include "build.h"
+#include "main.h"
 
 #define HCLK_CLOCK           72000000
 
 const uint32_t version = VERSION;
+const uint32_t buildnum = BUILDNUM;
 
 void SYS_Init(void)
 {
@@ -95,7 +95,11 @@ void SYS_Init(void)
     SystemCoreClockUpdate();
 
     GPIO_SetMode(PB, BIT5, GPIO_PMD_OUTPUT);
+    GPIO_SetMode(PC, BIT12, GPIO_PMD_OUTPUT);
+    GPIO_SetMode(PC, BIT13, GPIO_PMD_OUTPUT);
 	PB5 = 0;
+	PC12 = 0;
+	PC13 = 0;
 /*
 	//setup gpio pins for the fds
     GPIO_SetMode(PD, BIT5, GPIO_PMD_INPUT);
@@ -339,6 +343,8 @@ int main()
     /* Enable USB device interrupt */
     NVIC_EnableIRQ(USBD_IRQn);
 
+	LED_GREEN(1);
+	LED_RED(0);
     printf("\n\nnuc123-fdsemu v%d.%02d build %d started.  Compiled on "__DATE__" at "__TIME__"\n",version / 100,version % 100,BUILDNUM);
     printf("--CPU @ %d MHz\n", SystemCoreClock / 1000000);
     printf("--SPI0 @ %d MHz\n", SPI_GetBusClock(SPI0) / 1000000);
