@@ -3,6 +3,8 @@
 
 #include "NUC123.h"
 
+int spi_fifo_read_packet(SPI_T *spi, uint8_t *data, int len);
+int spi_fifo_write_packet(SPI_T *spi, uint8_t *data, int len);
 int spi_read_packet(SPI_T *spi, uint8_t *data, int len);
 int spi_write_packet(SPI_T *spi, uint8_t *data, int len);
 void spi_select_device(SPI_T *spi, int ss);

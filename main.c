@@ -145,8 +145,8 @@ void SPI_Init(void)
     /* Configure as a master, clock idle low, 32-bit transaction, drive output on falling clock edge and latch input on rising edge. */
     /* Set IP clock divider. SPI clock rate = 2MHz */
     SPI_Open(SPI0, SPI_MASTER, SPI_MODE_0, 8, 35000000);
-    SPI_Open(SPI1, SPI_MASTER, SPI_MODE_0, 8, 1000000);
-//    SPI_EnableFIFO(SPI0, 7, 7);
+    SPI_Open(SPI1, SPI_MASTER, SPI_MODE_0, 8, 12000000);
+//    SPI_EnableFIFO(SPI1, 4, 4);
 
     /* Enable the automatic hardware slave select function. Select the SS pin and configure as low-active. */
 //    SPI_EnableAutoSS(SPI0, SPI_SS0, SPI_SS_ACTIVE_LOW);

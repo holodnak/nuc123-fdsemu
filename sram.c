@@ -88,43 +88,89 @@ void sram_test(int ss)
 	}
 }
 
+uint8_t sram_read_status()
+{
+	uint8_t data;
+
+	data = 0x05;
+	spi_select_device(SPI_SRAM, 0);
+	spi_write_packet(SPI_SRAM, &data, 1);
+	spi_read_packet(SPI_SRAM, &data, 1);
+	spi_deselect_device(SPI_SRAM, 0);
+	return(data);
+}
+
 void sram_init_device(int ss)
 {
-	uint8_t data[4];
-
-	spi_select_device(SPI_SRAM, ss);
-	spi_deselect_device(SPI_SRAM, ss);
+	uint8_t data[16 + 1];
+	int i;
 
 	//ensure it is in sequencial mode
-	data[0] = 0x01;
+/*	data[0] = 0x01;
 	data[1] = 0x40;
 	spi_select_device(SPI_SRAM, ss);
 	spi_write_packet(SPI_SRAM, data, 2);
-	spi_deselect_device(SPI_SRAM, ss);
+	spi_deselect_device(SPI_SRAM, ss);*/
 
 	//read back mode register
+	printf("sram%d mode register: $%02X\n",ss,sram_read_status());
+	
+	for(i=4;i<16;i++) {
+		data[i] = (uint8_t)0xFF;
+	}
+	sram_write(0,data+4,12);
+	memset(data,0xCD,16);
+	sram_read(0,data+4,12);
+	hexdump("data+4",data+4,12);
+
+	for(i=4;i<16;i++) {
+		data[i] = (uint8_t)i;
+	}
+	sram_write(0,data+4,12);
+	memset(data,0xCD,16);
+	sram_read(0,data+4,12);
+	hexdump("data+4",data+4,12);
+
+	sram_read(0,data+4,12);
+	hexdump("data+4",data+4,12);
+	
 	data[0] = 0x05;
 	spi_select_device(SPI_SRAM, ss);
 	spi_write_packet(SPI_SRAM, data, 1);
 	spi_read_packet(SPI_SRAM, data, 1);
 	spi_deselect_device(SPI_SRAM, ss);
 	printf("sram%d mode register: $%02X\n",ss,data[0]);
+
 }
 
 void sram_init(void)
 {
-//	sram_init_device(0);
+	sram_init_device(0);
 //	sram_test(0);
 }
 
-void sram_read_start(uint32_t addr)
+void sram_read(int addr,uint8_t *buf,int len)
 {
+	uint8_t data[3];
+
+	data[0] = 3;
+	data[1] = (uint8_t)(addr >> 8);
+	data[2] = (uint8_t)(addr >> 0);
+	spi_select_device(SPI_SRAM, 0);
+	spi_write_packet(SPI_SRAM, data, 3);
+	spi_read_packet(SPI_SRAM, buf, len);
+	spi_deselect_device(SPI_SRAM, 0);
 }
 
-void sram_read_stop(void)
+void sram_write(int addr,uint8_t *buf,int len)
 {
-}
+	uint8_t data[3];
 
-void sram_read(uint8_t *buf,int len)
-{
+	data[0] = 2;
+	data[1] = (uint8_t)(addr >> 8);
+	data[2] = (uint8_t)(addr >> 0);
+	spi_select_device(SPI_SRAM, 0);
+	spi_write_packet(SPI_SRAM, data, 3);
+	spi_write_packet(SPI_SRAM, buf, len);
+	spi_deselect_device(SPI_SRAM, 0);
 }

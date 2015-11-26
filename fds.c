@@ -21,9 +21,8 @@ PIN 48 = data
 PIN 47 = rate
 */
 
-#define DECODEBUFSIZE	(1024 * 12)
-
-uint8_t decodebuf[DECODEBUFSIZE];
+//#define DECODEBUFSIZE	(1024 * 12)
+//uint8_t decodebuf[DECODEBUFSIZE];
 
 #define PAGESIZE	512
 #define PAGENUM		2
@@ -43,6 +42,11 @@ volatile uint8_t *writeptr;
 volatile int writepos, writepage;
 volatile uint8_t writebuf[4096];
 
+volatile uint8_t disklistbuf[4096 + 3];
+volatile uint8_t *disklistblock = disklistbuf;
+volatile uint8_t *disklist = disklistbuf + 1;
+int disklistpos = -1;
+
 volatile int diskblock = 0;
 
 //for sending data to the ram adaptor
@@ -52,11 +56,11 @@ volatile int count = 0;
 volatile uint8_t data;
 volatile int outbit;
 volatile int bytes;
-int needpage;
-fifo_t writefifo;
+volatile int needpage;
+volatile fifo_t writefifo;
 
-int writing;
-int decodepos;
+volatile int writing;
+volatile int decodepos;
 
 __inline uint8_t raw_to_raw03_byte(uint8_t raw)
 {
@@ -183,10 +187,10 @@ void GPAB_IRQHandler(void)
 		ra = TIMER_GetCounter(TIMER0);
 		TIMER0->TCSR = TIMER_TCSR_CRST_Msk;
 		TIMER0->TCSR = TIMER_CONTINUOUS_MODE | 7 | TIMER_TCSR_TDR_EN_Msk | TIMER_TCSR_CEN_Msk;
-		decodebuf[bufpos++] = (uint8_t)ra;
-		if(bufpos >= DECODEBUFSIZE) {
-			bufpos = 0;
-		}
+//		decodebuf[bufpos++] = (uint8_t)ra;
+//		if(bufpos >= DECODEBUFSIZE) {
+//			bufpos = 0;
+//		}
     }
 }
 
@@ -463,6 +467,398 @@ static void begin_transfer(void)
 	printf("transferred %d bytes\r\n",bytes);
 }
 
+
+__inline void check_needbyte_loader(void)
+{
+	static int writebusy = 0;
+	static page_t *p = 0;
+	uint8_t spidata = 0xD7;
+	int offset,j,k;
+
+	//if page has been fully transferred, flush it to flash if needed and read next page
+	if(needpage) {
+
+		//get pointer to current pagebuf info
+		p = (page_t*)&pagebuf[needpage & PAGEMASK];
+		
+		//clear need page flag
+		needpage = 0;
+
+		//read next page
+		p->num = pagenum++;
+		flash_read_page(p->num,p->data);
+		
+		//check if some disklist data block gets inserted here
+		
+		//first page containing disklist data
+		j = disklistpos / 512;
+		
+		//last page containing disklist data
+		k = ((disklistpos + 4096 + 3) / 512);
+/*
+8325 / 512 = 16
+512 * 16 = 8192
+
+12421 / 512 = 24
+512 * 16 = 12288
+*/
+		if(p->num >= j && p->num < k) {
+			uint8_t *data;
+
+			//get starting offset in the block
+//			p = offset - disklistpos;
+			
+//			memcpy(p->datadisklistbuf;
+		}
+	}
+}
+
+
+//string to find to start sending the fake disklist
+uint8_t diskliststr[17] = {0x80,0x03,0x07,0x10,'D','I','S','K','L','I','S','T',0x00,0x80,0x00,0x10,0x00};
+
+int find_disklist()
+{
+	int pos = 0;
+	int count = 0;
+	uint8_t byte;
+
+	flash_read_start(0);
+	for(pos=0;pos<65500;) {
+
+		//read a byte from the flash
+		flash_read((uint8_t*)&byte,1);
+		pos++;
+		
+		//first byte matches
+		if(byte == diskliststr[0]) {
+			count = 1;
+			do {
+				flash_read((uint8_t*)&byte,1);
+				pos++;
+			} while(byte == diskliststr[count++]);
+			if(count == 18) {
+				printf("found disklist block header at %d (count = %d)\n",pos - count,count);
+
+				//skip over the crc
+				flash_read((uint8_t*)&byte,1);
+				flash_read((uint8_t*)&byte,1);
+				pos += 2;
+
+				//skip the gap
+				do {
+					flash_read((uint8_t*)&byte,1);
+					pos++;
+				} while(byte == 0 && pos < 65500);
+
+				//make sure this is a blocktype of 4
+				if(byte == 0x80) {
+					flash_read((uint8_t*)&byte,1);
+					pos++;
+					if(byte == 4) {
+						flash_read((uint8_t*)&byte,1);
+						printf("hard coded disk count = %d\n",byte);
+						flash_read_stop();
+						return(pos);
+					}
+				}
+			}
+		}
+	}
+	flash_read_stop();
+	return(-1);
+}
+
+void create_disklist(void)
+{
+	uint8_t *list = disklist + 32;
+	flash_header_t header;
+	int blocks = flash_get_total_blocks();
+	int i,num = 0;
+	uint32_t crc;
+
+	memset(disklist,0,4096 + 2);
+
+	for(i=0;i<blocks;i++) {
+		
+		//read disk header information
+		flash_read_disk_header(i,&header);
+		
+		//empty block
+		if((uint8_t)header.name[0] == 0xFF) {
+			continue;
+		}
+
+		//continuation of disk sides
+		if(header.name[0] == 0x00) {
+			continue;
+		}
+
+		list[0] = (uint8_t)i;
+		memcpy(list + 1,header.name,26);
+		list[31] = 0;
+		printf("block %X: id = %02d, '%s'\r\n",i,header.id,header.name);
+		list += 32;
+		num++;
+	}
+	disklistblock[0] = 4;
+	disklist[0] = num;
+
+	//correct
+	crc = calc_crc(disklistblock,4096 + 1 + 2);
+	disklist[4096] = (uint8_t)(crc >> 0);
+	disklist[4097] = (uint8_t)(crc >> 8);
+}
+/*
+static void begin_transfer_loader(void)
+{
+	int i, j;
+	int decodelen = 0;
+	int leadin = DEFAULT_LEAD_IN;
+	static int disklistpos = -1;
+
+	printf("beginning loader transfer...\r\n");
+
+	if(disklistpos == -1) {
+		disklistpos = find_disklist();
+		printf("find_disklist() = %d\n",disklistpos);
+		create_disklist();
+	}
+
+	flash_read_disk_start(diskblock);
+	needbyte = 0;
+	count = 7;
+	havewrite = 0;
+	writelen = 0;
+	
+	write_num = 0;
+	
+	for(i=0;i<1024;i++) {
+		decodebuf[i] = 0;
+	}
+
+    NVIC_DisableIRQ(USBD_IRQn);
+    NVIC_EnableIRQ(EINT0_IRQn);
+    NVIC_EnableIRQ(TMR1_IRQn);	
+	TIMER_Start(TIMER0);
+	TIMER_Start(TIMER1);
+
+	bytes = 0;
+	needbyte = 0;
+	count = 7;
+	havewrite = 0;
+	writelen = 0;
+
+	//transfer lead-in
+	while(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
+		if(needbyte) {
+			needbyte = 0;
+			data2 = 0;
+			leadin -= 8;
+			if(leadin <= 0) {
+				flash_read_disk((uint8_t*)&data2,1);
+				bytes++;
+				break;
+			}
+		}
+	}
+
+	//transfer disk data
+	while(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
+		if(IS_WRITE()) {
+			int len = 0;
+
+			writes[write_num].diskpos = bytes + 2;
+			TIMER0->TCSR = TIMER_TCSR_CRST_Msk;
+			TIMER0->TCMPR = 0xFFFFFF;
+			TIMER0->TCSR = TIMER_CONTINUOUS_MODE | 7 | TIMER_TCSR_TDR_EN_Msk | TIMER_TCSR_CEN_Msk;
+			decode(0,0,0,0);
+			while(IS_WRITE()) {
+				if(havewrite) {
+					havewrite = 0;
+					decode(decodebuf + decodelen,raw_to_raw03_byte(writelen),DECODEBUFSIZE,&len);
+				}
+				if(needbyte) {
+					needbyte = 0;
+					flash_read_disk((uint8_t*)&data2,1);
+					bytes++;
+					if(bytes >= 0xFF00) {
+						printf("reached end of data block, something went wrong...\r\n");
+						break;
+					}
+				}
+			}
+			TIMER0->TCSR = TIMER_TCSR_CRST_Msk;
+			len = (len / 8) + 2;
+			writes[write_num].decstart = decodelen;
+			writes[write_num].decend = decodelen + len;
+			printf("finished write %d, start = %d, end = %d (len = %d)\r\n",write_num,decodelen,decodelen + len,len);
+			decodelen += len;
+			write_num++;
+		}
+		if(needbyte) {
+			needbyte = 0;
+			flash_read_disk((uint8_t*)&data2,1);
+			if(bytes >= disklistpos) {
+				int n = bytes - disklistpos;
+				if(n < (4096 + 2)) {
+					data2 = disklist[n];
+				}
+				else {
+					data2 = 0;
+				}
+			}
+			bytes++;
+			if(bytes >= 0xFF00) {
+				printf("reached end of data block, something went wrong...\r\n");
+				break;
+			}
+		}
+	}
+    NVIC_DisableIRQ(EINT0_IRQn);
+    NVIC_DisableIRQ(TMR1_IRQn);
+	TIMER_Stop(TIMER0);
+	TIMER_Stop(TIMER1);
+    NVIC_EnableIRQ(USBD_IRQn);
+
+	flash_read_disk_stop();
+	
+	//loader
+	if(write_num) {
+		uint8_t *ptr = &decodebuf[1024];
+		int in,out;
+		
+		//ptr should look like this: $80 $02 $dd
+		//where $dd is the new diskblock
+//		hexdump("decodebuf",decodebuf,256);
+		bin_to_raw03(decodebuf,sectorbuf,writes[0].decend,4096);
+		in = 0;
+		out = 0;
+		block_decode(&decodebuf[1024],sectorbuf,&in,&out,4096,1024,2,2);
+		
+//		hexdump("&decodebuf[1024]",&decodebuf[1024],256);
+
+		printf("loader exiting, new diskblock = %d\n",ptr[1]);
+		fds_insert_disk(ptr[1]);
+		return;
+	}
+
+	printf("transferred %d bytes\r\n",bytes);
+}
+*/
+static void begin_transfer_loader(void)
+{
+	page_t *p;
+	int i, leadin = (DEFAULT_LEAD_IN / 8) - 1;
+
+	printf("beginning transfer loader...\r\n");
+
+	if(disklistpos == -1) {
+		disklistpos = find_disklist();
+		printf("find_disklist() = %d\n",disklistpos);
+		create_disklist();
+	}
+
+	//initialize variables
+	outbit = 0;
+	rate = 0;
+	bytes = 0;
+
+	//setup page data pointer/position
+	pageptr = pagebuf[0].data;
+	pagepos = 0;
+
+	//curpage is the current buffer index that the current page is being read from
+	curpage = 0;
+	
+	writing = 0;
+	//pagenum is the page that will next be read from the flash
+	pagenum = 1;
+
+	//lead-in byte counter
+	leadin = (DEFAULT_LEAD_IN / 8) - 1;
+	
+	//fill the page buffers with data
+	for(i=0;i<PAGENUM;i++) {
+		pagebuf[i].num = pagenum++;
+		pagebuf[i].dirty = 0;
+		flash_read_page(pagebuf[i].num,(uint8_t*)pagebuf[i].data);
+	}
+
+	//finish off the 0.15 second delay
+	TIMER_Delay(TIMER2, 130 * 1000);
+
+	//enable/disable necessary irq's
+    NVIC_DisableIRQ(USBD_IRQn);
+    NVIC_DisableIRQ(GPAB_IRQn);
+    NVIC_EnableIRQ(EINT0_IRQn);
+    NVIC_EnableIRQ(TMR1_IRQn);
+	
+	//start timers
+	TIMER_Start(TIMER0);
+	TIMER_Start(TIMER1);
+
+	//activate ready signal
+	SET_READY();
+	
+	LED_RED(1);
+
+	//transfer lead-in
+	while(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
+		
+		//keep zeroing these while we transfer the leadin
+		pagepos = 0;
+		outbit = 0;
+		data = 0;
+
+		//check if enough leadin data has been sent
+		if(bytes >= leadin) {
+			//todo: do some checking on the "count" variable and make sure its 0 to ensure no weird data is read
+			break;
+		}
+	}
+	
+	//reset byte counter
+	pagepos = 0;
+	data = 0;
+	count = 7;
+
+	TIMER0->TCSR = TIMER_TCSR_CRST_Msk;
+	TIMER0->TCMPR = 0xFFFFFF;
+	TIMER0->TCSR = TIMER_CONTINUOUS_MODE | 7 | TIMER_TCSR_TDR_EN_Msk | TIMER_TCSR_CEN_Msk;
+
+	bytes = 0;
+
+	//transfer disk data
+	while(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
+
+		//check on the buffers
+		check_needbyte_loader();
+
+		//check if insane
+		if(bytes >= 0xFF00) {
+			printf("reached end of data block, something went wrong...\r\n");
+			break;
+		}
+	}
+
+	if(fifo_has_data(&writefifo)) {
+		printf("data still in the fifo...\n");
+	}
+
+    NVIC_DisableIRQ(EINT0_IRQn);
+    NVIC_DisableIRQ(TMR1_IRQn);
+	TIMER_Stop(TIMER0);
+	TIMER_Stop(TIMER1);
+    NVIC_EnableIRQ(USBD_IRQn);
+
+	//clear the ready signal
+	CLEAR_READY();
+
+	LED_RED(0);
+	printf("transferred %d bytes\r\n",bytes);
+}
+
 void fds_init(void)
 {
 	int usbattached = USBD_IS_ATTACHED();
@@ -478,7 +874,7 @@ void fds_init(void)
 		CLEAR_READY();
 		CLEAR_MEDIASET();
 		CLEAR_MOTORON();
-//		fds_insert_disk(1);
+		fds_insert_disk(0);
 	}
 	
 	fifo_init(&writefifo,(uint8_t*)writebuf,4096);
@@ -642,7 +1038,7 @@ void fds_tick(void)
 
 		if(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
 			if(diskblock == 0) {
-//				begin_transfer_loader();
+				begin_transfer_loader();
 			}
 			else {
 				begin_transfer();
