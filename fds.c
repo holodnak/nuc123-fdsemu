@@ -77,15 +77,12 @@ __inline void decode(uint8_t *dst, uint8_t src, int *outptr, uint8_t *bit)
 
 	switch(src | (*bit << 4)) {
 		case 0x11:
-//			dst[out/8] &= ~(1 << (out & 7));
 			out++;
 		case 0x00:
-//			dst[out/8] &= ~(1 << (out & 7));
 			out++;
 			*bit = 0;
 			break;
 		case 0x12:
-//			dst[out/8] &= ~(1 << (out & 7));
 			out++;
 		case 0x01:
 		case 0x10:
@@ -93,8 +90,7 @@ __inline void decode(uint8_t *dst, uint8_t src, int *outptr, uint8_t *bit)
 			out++;
 			*bit = 1;
 			break;
-		default: //Unexpected value.  Keep going, we'll probably get a CRC warning
-//			dst[out/8] &= ~(1 << (out & 7));
+		default:
 			out++;
 			*bit = 0;
 			break;
@@ -154,21 +150,23 @@ void TMR1_IRQHandler(void)
 //for writes coming out of the ram adaptor
 void EINT0_IRQHandler(void)
 {
+	int ra;
+
 	//clear interrupt flag
     GPIO_CLR_INT_FLAG(PB, BIT14);
-
+	
 	//if we are writing
 	if(IS_WRITE()) {
 		
 		//get flux transition time
-		uint8_t ra = (uint8_t)TIMER_GetCounter(TIMER0);
+		ra = TIMER_GetCounter(TIMER0);
 		
 		//restart the counter
 		TIMER0->TCSR = TIMER_TCSR_CRST_Msk;
 		TIMER0->TCSR = TIMER_CONTINUOUS_MODE | 7 | TIMER_TCSR_TDR_EN_Msk | TIMER_TCSR_CEN_Msk;
 
 		//put the data into the fifo buffer
-		fifo_write_byte(&writefifo,ra);
+		fifo_write_byte(&writefifo,(uint8_t)ra);
 	}
 }
 
@@ -199,6 +197,7 @@ __inline void check_needbyte(void)
 {
 	static int writebusy = 0;
 	static page_t *p = 0;
+	uint8_t spidata = 0xD7;
 
 	//if page has been fully transferred, flush it to flash if needed and read next page
 	if(needpage) {
@@ -211,7 +210,23 @@ __inline void check_needbyte(void)
 
 		//check if page is dirty and needs to be written
 		if(p->dirty) {
-			printf("writing dirty page %d\n",p->num);
+			
+			//see if an old write is still going on
+			spi_select_device(SPI_FLASH, 0);
+			spi_write_packet(SPI_FLASH, &spidata, 1);
+			spi_read_packet(SPI_FLASH, &spidata, 1);
+		
+			//write has finished, read the next page
+			if((spidata & 0x80) == 0) {
+				printf("flash still busy...waiting...not good...\n");
+				while((spidata & 0x80) == 0) {
+					spi_read_packet(SPI_FLASH, &spidata, 1);
+				}
+			}
+
+			spi_deselect_device(SPI_FLASH, 0);
+
+			printf("writing dirty page %d (pagepos = %d)\n",p->num,pagepos);
 			
 			//write page to flash
 			flash_write_page(p->num,p->data);
@@ -235,8 +250,6 @@ __inline void check_needbyte(void)
 	
 	//check if we are still busy writing
 	if(writebusy) {
-		uint8_t spidata = 0xD7;
-		
 		spi_select_device(SPI_FLASH, 0);
 		spi_write_packet(SPI_FLASH, &spidata, 1);
 		spi_read_packet(SPI_FLASH, &spidata, 1);
@@ -329,6 +342,9 @@ static void begin_transfer(void)
 	//transfer disk data
 	while(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
 
+		//check on the buffers
+		check_needbyte();
+
 		//check if we have started writing
 		if(IS_WRITE()) {
 			int len = 0;
@@ -343,7 +359,7 @@ static void begin_transfer(void)
 			writeptr = pagebuf[writepage].data;
 			pagebuf[writepage].dirty = 1;
 
-			printf("write happening at %X bytes\n",bytes);
+			printf("write happening at %X bytes (pagepos = %d)\n",bytes,pagepos);
 			
 			TIMER0->TCSR = TIMER_TCSR_CRST_Msk;
 			TIMER0->TCMPR = 0xFFFFFF;
@@ -367,9 +383,6 @@ static void begin_transfer(void)
 							writeptr = pagebuf[writepage].data;
 							pagebuf[writepage].dirty = 1;
 						}
-					}
-					if(len >= 8) {
-						printf("len > 8?!\n");
 					}
 				}
 
@@ -403,17 +416,18 @@ static void begin_transfer(void)
 				writeptr[writepos] = decoded[0];
 			}
 			LED_GREEN(1);
-			printf("write ended at %X bytes, %d bytes written\n",bytes,writelen);
+			printf("write ended at %X bytes, %d bytes written (pagepos = %d)\n",bytes,writelen,pagepos);
 		}
-
-		//check on the buffers
-		check_needbyte();
 
 		//check if insane
 		if(bytes >= 0xFF00) {
 			printf("reached end of data block, something went wrong...\r\n");
 			break;
 		}
+	}
+
+	if(fifo_has_data(&writefifo)) {
+		printf("data still in the fifo...\n");
 	}
 
     NVIC_DisableIRQ(EINT0_IRQn);
@@ -429,7 +443,7 @@ static void begin_transfer(void)
 	//check if page is dirty and needs to be written
 	if(p->dirty) {
 		p->dirty = 0;
-		printf("(end) writing dirty page %d\n",p->num);
+		printf("(end) writing dirty page %d (pagepos = %d)\n",p->num,pagepos);
 			
 		//wait for write to finish
 		flash_busy_wait();
