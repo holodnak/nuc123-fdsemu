@@ -47,25 +47,20 @@ uint16_t calc_crc(uint8_t *buf, int size) {
 
 void bin_to_raw03(uint8_t *bin, uint8_t *raw, int binSize, int rawSize) {
     int in, out;
-    uint8_t bit, data;
+    uint8_t bit;
 
     memset(raw,0xff,rawSize);
     for(bit=1, out=0, in=0; in<binSize*8; in++) {
-		 if ((in & 7) == 0) {
-			 data = *bin;
-			 bin++;
-		 }
-		 bit = (bit << 7) | (1 & (data >> (in & 7)));   //LSB first
-//     bit = (bit<<7) | (1 & (bin[in/8]>>(in%8)));   //LSB first
+		bit = (bit<<7) | (1 & (bin[in/8]>>(in%8)));   //LSB first
         switch(bit) {
             case 0x00:  //10 10
-					 out++;
+				out++;
                 raw[out]++;
                 break;
             case 0x01:  //10 01
             case 0x81:  //01 01
                 raw[out]++;
-					 out++;
+				out++;
                 break;
             case 0x80:  //01 10
                 raw[out] += 2;

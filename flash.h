@@ -21,6 +21,7 @@ void flash_busy_wait(void);
 void flash_read_start(uint32_t addr);
 void flash_read_stop(void);
 void flash_read(uint8_t *buf,int len);
+void flash_read_data(uint32_t addr,uint8_t *buf,int len);
 
 void flash_read_disk_header(int block,flash_header_t *header);
 void flash_read_page(int page,uint8_t *buf);

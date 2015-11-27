@@ -195,27 +195,24 @@ void flash_read(uint8_t *buf,int len)
 	spi_read_packet(SPI_FLASH, buf, len);
 }
 
-void flash_read_disk_header(int block,flash_header_t *header)
-{
-	flash_read_start(block * 0x10000);
-	flash_read((uint8_t*)header,256);
-	flash_read_stop();
-}
-
-void flash_read_data(int addr,uint8_t *buf)
+void flash_read_data(uint32_t addr,uint8_t *buf,int len)
 {
 	uint8_t data[4];
 
-	//read the data
+	//read data
 	data[0] = 0x03;
-	data[1] = addr >> 16;
-	data[2] = addr >> 8;
-	data[3] = addr;
+	data[1] = (uint8_t)(addr >> 16);
+	data[2] = (uint8_t)(addr >> 8);
+	data[3] = (uint8_t)(addr);
 	spi_select_device(SPI_FLASH, 0);
 	spi_write_packet(SPI_FLASH, data, 4);
-	spi_read_packet(SPI_FLASH, buf, 512);
+	spi_read_packet(SPI_FLASH, buf, len);
 	spi_deselect_device(SPI_FLASH, 0);
-	printf("flash_read_data: reading from %d (%X %X %X)\n",addr,data[1],data[2],data[3]);
+}
+
+void flash_read_disk_header(int block,flash_header_t *header)
+{
+	flash_read_data(block * 0x10000,(uint8_t*)header,256);
 }
 
 void flash_read_page(int page,uint8_t *buf)

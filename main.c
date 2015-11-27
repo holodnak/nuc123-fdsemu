@@ -87,6 +87,7 @@ void SYS_Init(void)
     SYS->GPC_MFP |= SYS_GPC_MFP_PC8_SPI1_SS0 | SYS_GPC_MFP_PC9_SPI1_CLK | SYS_GPC_MFP_PC10_SPI1_MISO0 | SYS_GPC_MFP_PC11_SPI1_MOSI0;
     SYS->ALT_MFP |= SYS_ALT_MFP_PC8_SPI1_SS0 | SYS_ALT_MFP_PC9_SPI1_CLK | SYS_ALT_MFP_PC10_SPI1_MISO0 | SYS_ALT_MFP_PC11_SPI1_MOSI0;
 
+	//enable Port F GPIO
     SYS->GPF_MFP = 0;
 
 	//int0
@@ -145,11 +146,7 @@ void SPI_Init(void)
     /* Configure as a master, clock idle low, 32-bit transaction, drive output on falling clock edge and latch input on rising edge. */
     /* Set IP clock divider. SPI clock rate = 2MHz */
     SPI_Open(SPI0, SPI_MASTER, SPI_MODE_0, 8, 35000000);
-    SPI_Open(SPI1, SPI_MASTER, SPI_MODE_0, 8, 12000000);
-//    SPI_EnableFIFO(SPI1, 4, 4);
-
-    /* Enable the automatic hardware slave select function. Select the SS pin and configure as low-active. */
-//    SPI_EnableAutoSS(SPI0, SPI_SS0, SPI_SS_ACTIVE_LOW);
+    SPI_Open(SPI1, SPI_MASTER, SPI_MODE_0, 8, 20000000);
 }
 
 static void print_block_info(int block)
@@ -277,7 +274,6 @@ static void console_tick(void)
 		case 's':
 			flash_init();
 			sram_init();
-//			memcheck();
 			break;
 		case 'd':
 			printf("entering disk read mode.\n");

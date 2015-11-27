@@ -5,9 +5,9 @@
 void fifo_init(fifo_t *f, uint8_t *buf, int size)
 {
 	f->buf = buf;
+	f->size = size;
 	f->head = 0;
 	f->tail = 0;
-	f->size = size;
 }
 
 int fifo_has_data(fifo_t *f)
@@ -18,17 +18,14 @@ int fifo_has_data(fifo_t *f)
 	return(0);
 }
 
-//This reads nbytes bytes from the FIFO
-//The number of bytes read is returned
 int fifo_read(fifo_t *f, void *buf, int nbytes)
 {
 	int i;
 	char * p;
 	p = buf;
 	for(i=0; i < nbytes; i++) {
-		if( f->tail != f->head ) { //see if any data is available
-			*p++ = f->buf[f->tail];  //grab a byte from the buffer
-			f->tail++;  //increment the tail
+		if(f->tail != f->head) { //see if any data is available
+			*p++ = f->buf[f->tail++];  //grab a byte from the buffer
 			if(f->tail == f->size) {  //check for wrap-around
 				f->tail = 0;
 			}
@@ -61,9 +58,6 @@ int fifo_read_byte(fifo_t *f, uint8_t *data)
 	return(0);
 }
  
-//This writes up to nbytes bytes to the FIFO
-//If the head runs in to the tail, not all bytes are written
-//The number of bytes written is returned
 int fifo_write(fifo_t * f, const void * buf, int nbytes)
 {
 	int i;

@@ -7,6 +7,7 @@
 #include "spiutil.h"
 #include "fifo.h"
 #include "main.h"
+#include "sram.h"
 
 /*
 PIN 43 = -write
@@ -21,31 +22,18 @@ PIN 48 = data
 PIN 47 = rate
 */
 
-//#define DECODEBUFSIZE	(1024 * 12)
-//uint8_t decodebuf[DECODEBUFSIZE];
-
-#define PAGESIZE	512
-#define PAGENUM		2
-#define PAGEMASK	(PAGENUM - 1)
-
-typedef struct page_s {
-	uint8_t	data[PAGESIZE];		//page data
-	int		num;				//page number
-	int		dirty;				//is page dirty?  needs to be written?
-} page_t;
-
-volatile page_t pagebuf[PAGENUM];
-volatile uint8_t *pageptr;
-volatile int pagepos, curpage, pagenum;
+#define WRITEBUFSIZE	4096
 
 volatile uint8_t *writeptr;
 volatile int writepos, writepage;
-volatile uint8_t writebuf[4096];
+volatile uint8_t writebuf[WRITEBUFSIZE];
 
 volatile uint8_t disklistbuf[4096 + 3];
 volatile uint8_t *disklistblock = disklistbuf;
 volatile uint8_t *disklist = disklistbuf + 1;
 int disklistpos = -1;
+
+uint8_t tempbuffer[4096];
 
 volatile int diskblock = 0;
 
@@ -53,12 +41,12 @@ volatile int diskblock = 0;
 volatile int rate = 0;
 volatile int count = 0;
 
-volatile uint8_t data;
+volatile uint8_t data, data2;
 volatile int outbit;
 volatile int bytes;
 volatile int needpage;
+volatile int needbyte;
 volatile fifo_t writefifo;
-
 volatile int writing;
 volatile int decodepos;
 
@@ -122,25 +110,10 @@ void TMR1_IRQHandler(void)
 			count = 0;
 
 			//read next byte from the page
-			data = pageptr[pagepos++];
+			data = data2;
 			
-			//increment the bytes read counter
-			bytes++;
-			
-			//if that was the last byte, reload the page buffer and change pages
-			if(pagepos == PAGESIZE) {
-
-				//signal that we need more data
-				needpage = 0x10 | curpage;
-				
-				//increment the page buffer number
-				curpage ^= 1;
-//				curpage = (curpage + 1) & PAGEMASK;
-				
-				//get pointer to page data and reset the page read position
-				pageptr = pagebuf[curpage].data;
-				pagepos = 0;
-			}
+			//signal we need another data byte
+			needbyte++;
 		}
 
 		//get next bit to be output
@@ -170,7 +143,7 @@ void EINT0_IRQHandler(void)
 		TIMER0->TCSR = TIMER_CONTINUOUS_MODE | 7 | TIMER_TCSR_TDR_EN_Msk | TIMER_TCSR_CEN_Msk;
 
 		//put the data into the fifo buffer
-		fifo_write_byte(&writefifo,(uint8_t)ra);
+		fifo_write_byte((fifo_t*)&writefifo,(uint8_t)ra);
 	}
 }
 
@@ -199,108 +172,34 @@ void hexdump(char *desc, void *addr, int len);
 
 __inline void check_needbyte(void)
 {
-	static int writebusy = 0;
-	static page_t *p = 0;
-	uint8_t spidata = 0xD7;
-
-	//if page has been fully transferred, flush it to flash if needed and read next page
-	if(needpage) {
-
-		//get pointer to current pagebuf info
-		p = (page_t*)&pagebuf[needpage & PAGEMASK];
+	if(needbyte) {
+			
+		//clear flag
+		needbyte = 0;
 		
-		//clear need page flag
-		needpage = 0;
-
-		//check if page is dirty and needs to be written
-		if(p->dirty) {
-			
-			//see if an old write is still going on
-			spi_select_device(SPI_FLASH, 0);
-			spi_write_packet(SPI_FLASH, &spidata, 1);
-			spi_read_packet(SPI_FLASH, &spidata, 1);
+		//read next byte to be output
+		sram_read(bytes,(uint8_t*)&data2,1);
 		
-			//write has finished, read the next page
-			if((spidata & 0x80) == 0) {
-				printf("flash still busy...waiting...not good...\n");
-				while((spidata & 0x80) == 0) {
-					spi_read_packet(SPI_FLASH, &spidata, 1);
-				}
-			}
-
-			spi_deselect_device(SPI_FLASH, 0);
-
-			printf("writing dirty page %d (pagepos = %d)\n",p->num,pagepos);
-			
-			//write page to flash
-			flash_write_page(p->num,p->data);
-			
-			//set busy flag to delay the reading of the next page
-			writebusy = 1;
-
-			//clear the dirty flag
-			p->dirty = 0;
-
-			//increment the page that this block holds
-			p->num = pagenum++;
-		}
-
-		//no data to write, just read next page
-		else {
-			p->num = pagenum++;
-			flash_read_page(p->num,p->data);
-		}
+		//increment the byte counter
+		bytes++;
 	}
-	
-	//check if we are still busy writing
-	if(writebusy) {
-		spi_select_device(SPI_FLASH, 0);
-		spi_write_packet(SPI_FLASH, &spidata, 1);
-		spi_read_packet(SPI_FLASH, &spidata, 1);
-		spi_deselect_device(SPI_FLASH, 0);
-		
-		//write has finished, read the next page
-		if(spidata & 0x80) {
-			writebusy = 0;
-			flash_read_page(p->num,p->data);
-		}
-	}
-	
 }
 
 static void begin_transfer(void)
 {
-	page_t *p;
-	int i, leadin = (DEFAULT_LEAD_IN / 8) - 1;
+	int leadin = (DEFAULT_LEAD_IN / 8) - 1;
+	int dirty = 0;
 
-	printf("beginning transfer2...\r\n");
+	printf("beginning transfer...\r\n");
 
 	//initialize variables
 	outbit = 0;
 	rate = 0;
 	bytes = 0;
 
-	//setup page data pointer/position
-	pageptr = pagebuf[0].data;
-	pagepos = 0;
-
-	//curpage is the current buffer index that the current page is being read from
-	curpage = 0;
-	
-	writing = 0;
-	//pagenum is the page that will next be read from the flash
-	pagenum = ((diskblock * 0x10000) / 512) + 1;
-
 	//lead-in byte counter
 	leadin = (DEFAULT_LEAD_IN / 8) - 1;
 	
-	//fill the page buffers with data
-	for(i=0;i<PAGENUM;i++) {
-		pagebuf[i].num = pagenum++;
-		pagebuf[i].dirty = 0;
-		flash_read_page(pagebuf[i].num,(uint8_t*)pagebuf[i].data);
-	}
-
 	//finish off the 0.15 second delay
 	TIMER_Delay(TIMER2, 130 * 1000);
 
@@ -319,34 +218,30 @@ static void begin_transfer(void)
 	
 	LED_RED(1);
 
+	data2 = 0;
+
 	//transfer lead-in
 	while(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
 		
-		//keep zeroing these while we transfer the leadin
-		pagepos = 0;
-		outbit = 0;
-		data = 0;
+		//if irq handler needs more data
+		if(needbyte) {
+			needbyte = 0;
+			bytes++;
+		}
 
 		//check if enough leadin data has been sent
 		if(bytes >= leadin) {
-			//todo: do some checking on the "count" variable and make sure its 0 to ensure no weird data is read
 			break;
 		}
 	}
 	
 	//reset byte counter
-	pagepos = 0;
-	data = 0;
-	count = 7;
-
-	TIMER0->TCSR = TIMER_TCSR_CRST_Msk;
-
-	bytes = 0;
+	bytes = 512;
 
 	//transfer disk data
 	while(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
 
-		//check on the buffers
+		//check irq handler requesting another byte
 		check_needbyte();
 
 		//check if we have started writing
@@ -355,16 +250,16 @@ static void begin_transfer(void)
 			uint8_t bitval = 0;
 			uint8_t decoded[8] = {0,0,0,0,0,0,0,0};
 			uint8_t byte;
-			int writelen = 0;
 
 			LED_GREEN(0);
-			writepos = pagepos;
-			writepage = curpage;
-			writeptr = pagebuf[writepage].data;
-			pagebuf[writepage].dirty = 1;
 
-			printf("write happening at %X bytes (pagepos = %d)\n",bytes,pagepos);
-			
+			//set dirty flag to write data back to flash
+			dirty = 1;
+
+			//get initial write position
+			writepos = bytes;
+
+			//initialize the timer to get the flux transitions
 			TIMER0->TCSR = TIMER_TCSR_CRST_Msk;
 			TIMER0->TCMPR = 0xFFFFFF;
 			TIMER0->TCSR = TIMER_CONTINUOUS_MODE | 7 | TIMER_TCSR_TDR_EN_Msk | TIMER_TCSR_CEN_Msk;
@@ -372,55 +267,50 @@ static void begin_transfer(void)
 			//while the write line is asserted
 			while(IS_WRITE()) {
 
-				//decode data in the fifo buffer
-				while(fifo_read_byte(&writefifo,&byte)) {
-					decode((uint8_t*)decoded,raw_to_raw03_byte(byte),&len,&bitval);
-					if(len >= 8) {
-						writelen++;
-						len -= 8;
-						writeptr[writepos++] = decoded[0];
-						decoded[0] = decoded[1];
-						decoded[1] = 0;
-						if(writepos >= PAGESIZE) {
-							writepos = 0;
-							writepage ^= 1;
-							writeptr = pagebuf[writepage].data;
-							pagebuf[writepage].dirty = 1;
-						}
-					}
-				}
-
-				//check on the buffers
+				//check irq handler requesting another byte
 				check_needbyte();
 
+				//decode data in the fifo buffer in there is any
+				if(fifo_read_byte((fifo_t*)&writefifo,&byte)) {
+
+					//decode the data
+					decode((uint8_t*)decoded,raw_to_raw03_byte(byte),&len,&bitval);
+					
+					//if we have a full byte, write it to sram
+					if(len >= 8) {
+						len -= 8;
+						sram_write(writepos++,decoded,1);
+						decoded[0] = decoded[1];
+						decoded[1] = 0;
+					}
+				}
 			}
 
+			//stop the timer for gathering flux transitions
 			TIMER0->TCSR = TIMER_TCSR_CRST_Msk;
 
 			//decode data in the fifo buffer
-			while(fifo_read_byte(&writefifo,&byte)) {
+			while(fifo_read_byte((fifo_t*)&writefifo,&byte)) {
+
+				//check irq handler requesting another byte
+				check_needbyte();
+
 				decode((uint8_t*)decoded,raw_to_raw03_byte(byte),&len,&bitval);
 				if(len >= 8) {
 					len -= 8;
-					writelen++;
-					writeptr[writepos++] = decoded[0];
+					sram_write(writepos++,decoded,1);
 					decoded[0] = decoded[1];
 					decoded[1] = 0;
-					if(writepos >= PAGESIZE) {
-						writepos = 0;
-						writepage ^= 1;
-						writeptr = pagebuf[writepage].data;
-						pagebuf[writepage].dirty = 1;
-					}
 				}
 			}
 
+			check_needbyte();
+
 			if(len) {
-				writelen++;
-				writeptr[writepos] = decoded[0];
+				sram_write(writepos,decoded,1);
 			}
+
 			LED_GREEN(1);
-			printf("write ended at %X bytes, %d bytes written (pagepos = %d)\n",bytes,writelen,pagepos);
 		}
 
 		//check if insane
@@ -430,87 +320,37 @@ static void begin_transfer(void)
 		}
 	}
 
-	if(fifo_has_data(&writefifo)) {
-		printf("data still in the fifo...\n");
-	}
-
     NVIC_DisableIRQ(EINT0_IRQn);
     NVIC_DisableIRQ(TMR1_IRQn);
 	TIMER_Stop(TIMER0);
 	TIMER_Stop(TIMER1);
     NVIC_EnableIRQ(USBD_IRQn);
 
-	//get pointer to current pagebuf info
-	p = (page_t*)&pagebuf[curpage];
-//	hexdump("&pagebuf[curpage]",pagebuf[curpage].data,512);
-
-	//check if page is dirty and needs to be written
-	if(p->dirty) {
-		p->dirty = 0;
-		printf("(end) writing dirty page %d (pagepos = %d)\n",p->num,pagepos);
-			
-		//wait for write to finish
-		flash_busy_wait();
-
-		//write page to flash
-		flash_write_page(p->num,p->data);
-
-		//wait for write to finish
-		flash_busy_wait();
-
-	}
-	
 	//clear the ready signal
 	CLEAR_READY();
+	
+	LED_RED(1);
+	LED_GREEN(0);
 
-	LED_RED(0);
-	printf("transferred %d bytes\r\n",bytes);
-}
+	//if data was written, write it back to the flash
+	if(dirty) {
+		int flashpage = (diskblock * 0x10000) / 512;
+		int i;
 
+		printf("sram data is dirty, writing to flash....\r\n");
+		printf("starting flash page: %d\r\n",flashpage);
 
-__inline void check_needbyte_loader(void)
-{
-	static int writebusy = 0;
-	static page_t *p = 0;
-	uint8_t spidata = 0xD7;
-	int offset,j,k;
-
-	//if page has been fully transferred, flush it to flash if needed and read next page
-	if(needpage) {
-
-		//get pointer to current pagebuf info
-		p = (page_t*)&pagebuf[needpage & PAGEMASK];
-		
-		//clear need page flag
-		needpage = 0;
-
-		//read next page
-		p->num = pagenum++;
-		flash_read_page(p->num,p->data);
-		
-		//check if some disklist data block gets inserted here
-		
-		//first page containing disklist data
-		j = disklistpos / 512;
-		
-		//last page containing disklist data
-		k = ((disklistpos + 4096 + 3) / 512);
-/*
-8325 / 512 = 16
-512 * 16 = 8192
-
-12421 / 512 = 24
-512 * 16 = 12288
-*/
-		if(p->num >= j && p->num < k) {
-			uint8_t *data;
-
-			//get starting offset in the block
-//			p = offset - disklistpos;
-			
-//			memcpy(p->datadisklistbuf;
+		//write 512 bytes at a time
+		for(i=0;i<128;i++) {
+			sram_read(i * 512,tempbuffer,512);
+			flash_write_page(flashpage++,tempbuffer);
+			flash_busy_wait();
 		}
 	}
+
+	LED_RED(0);
+	LED_GREEN(1);
+	printf("transferred %d bytes\r\n",bytes);
 }
 
 
@@ -571,13 +411,13 @@ int find_disklist()
 
 void create_disklist(void)
 {
-	uint8_t *list = disklist + 32;
+	uint8_t *list = (uint8_t*)disklist + 32;
 	flash_header_t header;
 	int blocks = flash_get_total_blocks();
 	int i,num = 0;
 	uint32_t crc;
 
-	memset(disklist,0,4096 + 2);
+	memset((uint8_t*)disklist,0,4096 + 2);
 
 	for(i=0;i<blocks;i++) {
 		
@@ -605,19 +445,17 @@ void create_disklist(void)
 	disklist[0] = num;
 
 	//correct
-	crc = calc_crc(disklistblock,4096 + 1 + 2);
+	crc = calc_crc((uint8_t*)disklistblock,4096 + 1 + 2);
 	disklist[4096] = (uint8_t)(crc >> 0);
 	disklist[4097] = (uint8_t)(crc >> 8);
 }
-/*
+
 static void begin_transfer_loader(void)
 {
-	int i, j;
-	int decodelen = 0;
-	int leadin = DEFAULT_LEAD_IN;
-	static int disklistpos = -1;
+	int leadin = (DEFAULT_LEAD_IN / 8) - 1;
+	int dirty = 0;
 
-	printf("beginning loader transfer...\r\n");
+	printf("beginning transfer...\r\n");
 
 	if(disklistpos == -1) {
 		disklistpos = find_disklist();
@@ -625,166 +463,16 @@ static void begin_transfer_loader(void)
 		create_disklist();
 	}
 
-	flash_read_disk_start(diskblock);
-	needbyte = 0;
-	count = 7;
-	havewrite = 0;
-	writelen = 0;
-	
-	write_num = 0;
-	
-	for(i=0;i<1024;i++) {
-		decodebuf[i] = 0;
-	}
-
-    NVIC_DisableIRQ(USBD_IRQn);
-    NVIC_EnableIRQ(EINT0_IRQn);
-    NVIC_EnableIRQ(TMR1_IRQn);	
-	TIMER_Start(TIMER0);
-	TIMER_Start(TIMER1);
-
-	bytes = 0;
-	needbyte = 0;
-	count = 7;
-	havewrite = 0;
-	writelen = 0;
-
-	//transfer lead-in
-	while(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
-		if(needbyte) {
-			needbyte = 0;
-			data2 = 0;
-			leadin -= 8;
-			if(leadin <= 0) {
-				flash_read_disk((uint8_t*)&data2,1);
-				bytes++;
-				break;
-			}
-		}
-	}
-
-	//transfer disk data
-	while(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
-		if(IS_WRITE()) {
-			int len = 0;
-
-			writes[write_num].diskpos = bytes + 2;
-			TIMER0->TCSR = TIMER_TCSR_CRST_Msk;
-			TIMER0->TCMPR = 0xFFFFFF;
-			TIMER0->TCSR = TIMER_CONTINUOUS_MODE | 7 | TIMER_TCSR_TDR_EN_Msk | TIMER_TCSR_CEN_Msk;
-			decode(0,0,0,0);
-			while(IS_WRITE()) {
-				if(havewrite) {
-					havewrite = 0;
-					decode(decodebuf + decodelen,raw_to_raw03_byte(writelen),DECODEBUFSIZE,&len);
-				}
-				if(needbyte) {
-					needbyte = 0;
-					flash_read_disk((uint8_t*)&data2,1);
-					bytes++;
-					if(bytes >= 0xFF00) {
-						printf("reached end of data block, something went wrong...\r\n");
-						break;
-					}
-				}
-			}
-			TIMER0->TCSR = TIMER_TCSR_CRST_Msk;
-			len = (len / 8) + 2;
-			writes[write_num].decstart = decodelen;
-			writes[write_num].decend = decodelen + len;
-			printf("finished write %d, start = %d, end = %d (len = %d)\r\n",write_num,decodelen,decodelen + len,len);
-			decodelen += len;
-			write_num++;
-		}
-		if(needbyte) {
-			needbyte = 0;
-			flash_read_disk((uint8_t*)&data2,1);
-			if(bytes >= disklistpos) {
-				int n = bytes - disklistpos;
-				if(n < (4096 + 2)) {
-					data2 = disklist[n];
-				}
-				else {
-					data2 = 0;
-				}
-			}
-			bytes++;
-			if(bytes >= 0xFF00) {
-				printf("reached end of data block, something went wrong...\r\n");
-				break;
-			}
-		}
-	}
-    NVIC_DisableIRQ(EINT0_IRQn);
-    NVIC_DisableIRQ(TMR1_IRQn);
-	TIMER_Stop(TIMER0);
-	TIMER_Stop(TIMER1);
-    NVIC_EnableIRQ(USBD_IRQn);
-
-	flash_read_disk_stop();
-	
-	//loader
-	if(write_num) {
-		uint8_t *ptr = &decodebuf[1024];
-		int in,out;
-		
-		//ptr should look like this: $80 $02 $dd
-		//where $dd is the new diskblock
-//		hexdump("decodebuf",decodebuf,256);
-		bin_to_raw03(decodebuf,sectorbuf,writes[0].decend,4096);
-		in = 0;
-		out = 0;
-		block_decode(&decodebuf[1024],sectorbuf,&in,&out,4096,1024,2,2);
-		
-//		hexdump("&decodebuf[1024]",&decodebuf[1024],256);
-
-		printf("loader exiting, new diskblock = %d\n",ptr[1]);
-		fds_insert_disk(ptr[1]);
-		return;
-	}
-
-	printf("transferred %d bytes\r\n",bytes);
-}
-*/
-static void begin_transfer_loader(void)
-{
-	page_t *p;
-	int i, leadin = (DEFAULT_LEAD_IN / 8) - 1;
-
-	printf("beginning transfer loader...\r\n");
-
-	if(disklistpos == -1) {
-		disklistpos = find_disklist();
-		printf("find_disklist() = %d\n",disklistpos);
-		create_disklist();
-	}
+	sram_write(disklistpos,(uint8_t*)disklist,4096 + 2);
 
 	//initialize variables
 	outbit = 0;
 	rate = 0;
 	bytes = 0;
 
-	//setup page data pointer/position
-	pageptr = pagebuf[0].data;
-	pagepos = 0;
-
-	//curpage is the current buffer index that the current page is being read from
-	curpage = 0;
-	
-	writing = 0;
-	//pagenum is the page that will next be read from the flash
-	pagenum = 1;
-
 	//lead-in byte counter
 	leadin = (DEFAULT_LEAD_IN / 8) - 1;
 	
-	//fill the page buffers with data
-	for(i=0;i<PAGENUM;i++) {
-		pagebuf[i].num = pagenum++;
-		pagebuf[i].dirty = 0;
-		flash_read_page(pagebuf[i].num,(uint8_t*)pagebuf[i].data);
-	}
-
 	//finish off the 0.15 second delay
 	TIMER_Delay(TIMER2, 130 * 1000);
 
@@ -803,47 +491,62 @@ static void begin_transfer_loader(void)
 	
 	LED_RED(1);
 
+	data2 = 0;
+
 	//transfer lead-in
 	while(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
 		
-		//keep zeroing these while we transfer the leadin
-		pagepos = 0;
-		outbit = 0;
-		data = 0;
+		//if irq handler needs more data
+		if(needbyte) {
+			needbyte = 0;
+			bytes++;
+		}
 
 		//check if enough leadin data has been sent
 		if(bytes >= leadin) {
-			//todo: do some checking on the "count" variable and make sure its 0 to ensure no weird data is read
 			break;
 		}
 	}
 	
 	//reset byte counter
-	pagepos = 0;
-	data = 0;
-	count = 7;
-
-	TIMER0->TCSR = TIMER_TCSR_CRST_Msk;
-	TIMER0->TCMPR = 0xFFFFFF;
-	TIMER0->TCSR = TIMER_CONTINUOUS_MODE | 7 | TIMER_TCSR_TDR_EN_Msk | TIMER_TCSR_CEN_Msk;
-
-	bytes = 0;
+	bytes = 512;
 
 	//transfer disk data
 	while(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
 
-		//check on the buffers
-		check_needbyte_loader();
+		//check irq handler requesting another byte
+		check_needbyte();
+
+		//check if we have started writing
+		if(IS_WRITE()) {
+			LED_GREEN(0);
+
+			//set dirty flag to write data back to flash
+			dirty = 1;
+
+			//initialize the timer to get the flux transitions
+			TIMER0->TCSR = TIMER_TCSR_CRST_Msk;
+			TIMER0->TCMPR = 0xFFFFFF;
+			TIMER0->TCSR = TIMER_CONTINUOUS_MODE | 7 | TIMER_TCSR_TDR_EN_Msk | TIMER_TCSR_CEN_Msk;
+
+			//while the write line is asserted, just gather data, dont decode any until later
+			while(IS_WRITE()) {
+
+				//check irq handler requesting another byte
+				check_needbyte();
+			}
+
+			//stop the timer for gathering flux transitions
+			TIMER0->TCSR = TIMER_TCSR_CRST_Msk;
+
+			LED_GREEN(1);
+		}
 
 		//check if insane
 		if(bytes >= 0xFF00) {
 			printf("reached end of data block, something went wrong...\r\n");
 			break;
 		}
-	}
-
-	if(fifo_has_data(&writefifo)) {
-		printf("data still in the fifo...\n");
 	}
 
     NVIC_DisableIRQ(EINT0_IRQn);
@@ -854,9 +557,37 @@ static void begin_transfer_loader(void)
 
 	//clear the ready signal
 	CLEAR_READY();
+	
+	LED_RED(1);
+	LED_GREEN(0);
+
+	//if data was written, figure out what diskblock to boot from
+	if(dirty) {
+		uint8_t *ptr = tempbuffer;
+		int in,out,len = 0;
+		uint8_t byte,bitval = 0;
+
+		while(fifo_read_byte((fifo_t*)&writefifo,&byte)) {
+			decode(tempbuffer,raw_to_raw03_byte(byte),&len,&bitval);
+		}
+
+		memset((uint8_t*)writebuf,0,WRITEBUFSIZE);
+		bin_to_raw03(tempbuffer,(uint8_t*)writebuf,len / 8,WRITEBUFSIZE);
+		in = out = 0;
+		memset(tempbuffer,0,1024);
+		block_decode(tempbuffer,(uint8_t*)writebuf,&in,&out,4096,1024,2,2);
+		
+		hexdump("tempbuffer",tempbuffer,256);
+
+		printf("loader exiting, new diskblock = %d\n",ptr[1]);
+		fds_insert_disk(ptr[1]);
+	}
+	else {
+		printf("transferred %d bytes\r\n",bytes);
+	}
 
 	LED_RED(0);
-	printf("transferred %d bytes\r\n",bytes);
+	LED_GREEN(1);
 }
 
 void fds_init(void)
@@ -874,10 +605,10 @@ void fds_init(void)
 		CLEAR_READY();
 		CLEAR_MEDIASET();
 		CLEAR_MOTORON();
-		fds_insert_disk(0);
+//		fds_insert_disk(0);
 	}
 	
-	fifo_init(&writefifo,(uint8_t*)writebuf,4096);
+	fifo_init((fifo_t*)&writefifo,(uint8_t*)writebuf,4096);
 }
 
 enum {
@@ -1017,6 +748,7 @@ void fds_tick(void)
 		printf("new disk side slot = %d\n",diskblock);
 		CLEAR_MEDIASET();
 		TIMER_Delay(TIMER2,1000 * 1000);
+		fds_insert_disk(diskblock);
 		
 		//wait for button to be released before we insert disk
 		while(PA10 != 0);
@@ -1049,8 +781,15 @@ void fds_tick(void)
 
 void fds_insert_disk(int block)
 {
+	int i;
+
 	diskblock = block;
 	fds_setup_transfer();
+	printf("copying image to sram...\r\n");
+	for(i=0;i<64;i++) {
+		flash_read_data((diskblock * 0x10000) + (i * 1024),tempbuffer,1024);
+		sram_write(i * 1024,tempbuffer,1024);
+	}
 	printf("inserting disk at block %d\r\n",block);
 	SET_MEDIASET();
 	SET_WRITABLE();
