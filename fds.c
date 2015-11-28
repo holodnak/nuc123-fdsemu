@@ -917,10 +917,13 @@ static int get_buf_size()
 void fds_diskread_getdata(uint8_t *bufbuf, int len)
 {
 	int t,v,w;
-
+	int timeout = 1000000;
 	if(IS_READY() == 0) {
 		printf("waiting drive to be ready\n");
 		while(IS_READY() == 0);
+		if(timeout-- == 0) {
+			printf("timed out\n");
+		}
 	}
 	
 	while(get_buf_size() < len) {
@@ -945,6 +948,90 @@ void fds_diskread_getdata(uint8_t *bufbuf, int len)
 	}
 }
 
+static const uint8_t expand[]={ 0xaa, 0xa9, 0xa6, 0xa5, 0x9a, 0x99, 0x96, 0x95, 0x6a, 0x69, 0x66, 0x65, 0x5a, 0x59, 0x56, 0x55 };
+
+volatile uint32_t dataout,dataout2;
+
+//for sending data out to disk drive
+void TMR3_IRQHandler(void)
+{
+	TIMER_ClearIntFlag(TIMER3);
+
+	//output current bit
+	PB14 = dataout & 1;
+
+	//shift the data byte over to the next next bit
+	dataout >>= 1;
+
+	//increment bit counter
+	count++;
+		
+	//if we have sent all eight bits of this byte, get next byte
+	if(count == 16) {
+		count = 0;
+
+		//read next byte from the page
+		dataout = dataout2;
+		
+		//signal we need another mfm byte
+		needbyte++;
+	}
+}
+
+void fds_start_diskwrite(void)
+{
+	dataout2 = 0xAAAA;
+	needbyte = 0;
+	count = 0;
+
+	CLEAR_WRITE();
+	CLEAR_STOPMOTOR();
+	SET_SCANMEDIA();
+
+	TIMER_Stop(TIMER0);
+	TIMER_Stop(TIMER1);
+	TIMER_Start(TIMER3);
+	NVIC_DisableIRQ(TMR1_IRQn);
+    NVIC_DisableIRQ(GPAB_IRQn);
+    NVIC_DisableIRQ(EINT0_IRQn);
+	NVIC_EnableIRQ(TMR3_IRQn);
+}
+
+void fds_stop_diskwrite(void)
+{
+	TIMER_Stop(TIMER3);
+	NVIC_DisableIRQ(TMR3_IRQn);
+	CLEAR_WRITE();
+	CLEAR_SCANMEDIA();
+	SET_STOPMOTOR();
+}
+
+int fds_diskwrite(void)
+{
+	uint8_t byte;
+
+	sram_read_start(0);
+
+	printf("waiting on drive to be ready\n");
+	while(IS_READY() == 0);
+	printf("writing...\n");
+	SET_WRITE();
+	
+	while(IS_READY()) {
+		if(needbyte) {
+			needbyte = 0;
+			sram_read_byte(&byte);
+			dataout2 = expand[byte & 0x0F];
+			dataout2 |= expand[(byte & 0xF0) >> 4] << 8;
+		}
+	}
+
+	sram_read_end(0);
+
+	return(0);
+}
+
+/*
 #define OUTBUFSIZE	(255 * 1)
 
 volatile uint8_t outbuf[2][OUTBUFSIZE];
@@ -1060,3 +1147,4 @@ int fds_diskwrite(void)
 	needchunk = 0;
 	return(0);
 }
+*/

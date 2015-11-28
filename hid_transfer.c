@@ -183,9 +183,9 @@ void HID_GetOutReport(uint8_t *pu8EpBuf, uint32_t u32Size)
     /* Check if it is in the data phase of write command */
     if((u8Cmd == ID_DISK_WRITE))// && (totalsize < 65500))
     {
-//		printf("writing data... (totallen = %d) (u32Size = %d)\n",totallen,u32Size);
+		printf("writing data... (totallen = %d) (u32Size = %d)\n",totallen,u32Size);
 
-		ret = fds_diskwrite_fillbuf(pu8EpBuf,64);
+//		ret = fds_diskwrite_fillbuf(pu8EpBuf,64);
 		len += 64;
 		totallen += 64;
 		
@@ -229,7 +229,7 @@ void HID_GetOutReport(uint8_t *pu8EpBuf, uint32_t u32Size)
 		u8Cmd = pu8EpBuf[0];
 		
 		if(u8Cmd == ID_DISK_WRITE) {
-			fds_diskwrite_fillbuf(pu8EpBuf + 1,63);
+//			fds_diskwrite_fillbuf(pu8EpBuf + 1,63);
 			len = 63;
 			totallen += 63;
 		}
@@ -419,8 +419,8 @@ void process_send_feature(uint8_t *usbdata,int len)
 		sequence = 1;
 //		sequence = 1;
 //		startread = 1;
-//		printf("process_send_feature: ID_DISK_READ_START\n");
-//		fds_writedisk();
+		printf("process_send_feature: ID_DISK_WRITE_START\n");
+		fds_diskwrite();
 	}
 
 	else if(reportid == ID_SRAM_WRITE) {
