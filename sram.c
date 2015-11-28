@@ -4,8 +4,6 @@
 #include "sram.h"
 #include "spiutil.h"
 
-#define SPI_SRAM	SPI1
-
 static int test_page(int page, int maxerr)
 {
 	uint8_t test_data[256];
@@ -115,4 +113,25 @@ void sram_write(int addr,uint8_t *buf,int len)
 	spi_write_packet(SPI_SRAM, data, 3);
 	spi_write_packet(SPI_SRAM, buf, len);
 	spi_deselect_device(SPI_SRAM, 0);
+}
+
+void sram_read_start(int addr)
+{
+	uint8_t data[3];
+
+	data[0] = 3;
+	data[1] = (uint8_t)(addr >> 8);
+	data[2] = (uint8_t)(addr >> 0);
+	spi_select_device(SPI_SRAM, 0);
+	spi_write_packet(SPI_SRAM, data, 3);
+}
+
+void sram_read_end()
+{
+	spi_deselect_device(SPI_SRAM, 0);
+}
+
+void sram_read_byte(uint8_t *data)
+{
+	spi_read_packet(SPI_SRAM, data, 1);
 }

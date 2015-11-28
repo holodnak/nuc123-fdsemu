@@ -1,6 +1,8 @@
 #ifndef __sram_h__
 #define __sram_h__
 
+#define SPI_SRAM	SPI1
+
 void sram_init(void);
 void sram_test(int ss);
 void sram_read(int addr,uint8_t *buf,int len);

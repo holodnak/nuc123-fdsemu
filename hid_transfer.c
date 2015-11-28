@@ -14,6 +14,7 @@
 #include "flash.h"
 #include "spiutil.h"
 #include "fds.h"
+#include "sram.h"
 
 uint8_t volatile g_u8EP2Ready = 0;
 
@@ -167,6 +168,78 @@ void USBD_IRQHandler(void)
     USBD_CLR_INT_FLAG(u32IntSts);
 }
 
+int wasready;
+int sequence = 1;
+
+void HID_GetOutReport(uint8_t *pu8EpBuf, uint32_t u32Size)
+{
+    static uint8_t u8Cmd = 0;
+	static int len = 0;
+	static int totallen = 0;
+	int ret;
+
+//	printf("HID_GetOutReport (report id = %d)\n",pu8EpBuf[0]);
+
+    /* Check if it is in the data phase of write command */
+    if((u8Cmd == ID_DISK_WRITE))// && (totalsize < 65500))
+    {
+//		printf("writing data... (totallen = %d) (u32Size = %d)\n",totallen,u32Size);
+
+		ret = fds_diskwrite_fillbuf(pu8EpBuf,64);
+		len += 64;
+		totallen += 64;
+		
+		//fillbuf returns 0 when the buffer is completely filled
+		if(ret == 0) {
+			sequence++;
+			u8Cmd = 0;
+			len = 0;
+
+//			printf("writing data... (totallen = %d)\n",totallen);
+			
+			if(IS_READY() == 0) {
+				
+				//if was previously ready
+				if(wasready) {
+					totallen = 0;
+					fds_stop_diskwrite();
+					USBD_SetStall(2);
+				}
+				
+				//hasnt been ready yet
+				else {
+					while(IS_READY() == 0);
+					wasready = 1;
+				}
+			}
+
+			if(IS_READY()) {
+				fds_diskwrite();
+			}
+
+		}
+				
+//		if(IS_READY() == 0) {
+//			fds_stop_diskwrite();
+//            USBD_SetStall(3);
+//		}
+    }
+    else
+    {
+		u8Cmd = pu8EpBuf[0];
+		
+		if(u8Cmd == ID_DISK_WRITE) {
+			fds_diskwrite_fillbuf(pu8EpBuf + 1,63);
+			len = 63;
+			totallen += 63;
+		}
+		else {
+			printf("unknown OUT report id = %X\n",u8Cmd);
+		}
+    }
+}
+
+
 void EP2_Handler(void)  /* Interrupt IN handler */
 {
 //    HID_SetInReport();
@@ -177,7 +250,7 @@ void EP3_Handler(void)  /* Interrupt OUT handler */
     uint8_t *ptr;
     /* Interrupt OUT */
     ptr = (uint8_t *)(USBD_BUF_BASE + USBD_GET_EP_BUF_ADDR(EP3));
-//    HID_GetOutReport(ptr, USBD_GET_PAYLOAD_LEN(EP3));
+    HID_GetOutReport(ptr, USBD_GET_PAYLOAD_LEN(EP3));
     USBD_SET_PAYLOAD_LEN(EP3, EP3_MAX_PKT_SIZE);
 }
 
@@ -270,8 +343,6 @@ void update_firmware(void)
     while(1);
 }
 
-int sequence = 1;
-
 void process_send_feature(uint8_t *usbdata,int len)
 {
 	uint8_t *buf = epdata;
@@ -334,10 +405,36 @@ void process_send_feature(uint8_t *usbdata,int len)
 		//TODO: the above and below lines of code do not work well together when being called back-to-back
 		//why??
 		
-//		fds_start_diskread();
+		fds_start_diskread();
 		sequence = 1;
 //		startread = 1;
 //		printf("process_send_feature: ID_DISK_READ_START\n");
+	}
+
+	else if(reportid == ID_DISK_WRITE_START) {
+//		fds_setup_diskread();
+		
+		fds_start_diskwrite();
+		wasready = 0;
+		sequence = 1;
+//		sequence = 1;
+//		startread = 1;
+//		printf("process_send_feature: ID_DISK_READ_START\n");
+//		fds_writedisk();
+	}
+
+	else if(reportid == ID_SRAM_WRITE) {
+		if(initcs) {
+			spi_deselect_device(SPI_SRAM, 0);
+			__NOP();
+			spi_select_device(SPI_SRAM, 0);
+			bytes = 0;
+		}
+		spi_write_packet(SPI_SRAM,buf + 4,size);
+		bytes += size;
+		if(holdcs == 0) {
+			spi_deselect_device(SPI_SRAM, 0);
+		}
 	}
 
 	else {
@@ -365,9 +462,9 @@ int get_feature_report(uint8_t reportid, uint8_t *buf)
 	else if(reportid == ID_DISK_READ) {
 		len = 255;
 		buf[0] = sequence++;
-//		fds_diskread_getdata(buf + 1,254);
+		fds_diskread_getdata(buf + 1,254);
 		if(IS_READY() == 0) {
-//			fds_stop_diskread();
+			fds_stop_diskread();
 			len = 1;
 		}
 	}

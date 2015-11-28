@@ -54,7 +54,7 @@ __inline uint8_t raw_to_raw03_byte(uint8_t raw)
 {
 	if(raw < 0x50)
 		return(3);
-	else if(raw < 0x78)
+	else if(raw < 0x70)
 		return(0);
 	else if(raw < 0xA0)
 		return(1);
@@ -160,13 +160,12 @@ void GPAB_IRQHandler(void)
 		ra = TIMER_GetCounter(TIMER0);
 		TIMER0->TCSR = TIMER_TCSR_CRST_Msk;
 		TIMER0->TCSR = TIMER_CONTINUOUS_MODE | 7 | TIMER_TCSR_TDR_EN_Msk | TIMER_TCSR_CEN_Msk;
-//		decodebuf[bufpos++] = (uint8_t)ra;
-//		if(bufpos >= DECODEBUFSIZE) {
-//			bufpos = 0;
-//		}
+		tempbuffer[bufpos++] = (uint8_t)ra;
+		if(bufpos >= 4096) {
+			bufpos = 0;
+		}
     }
 }
-
 
 void hexdump(char *desc, void *addr, int len);
 
@@ -191,11 +190,13 @@ static void begin_transfer(void)
 	int dirty = 0;
 
 	printf("beginning transfer...\r\n");
+	fifo_init((fifo_t*)&writefifo,(uint8_t*)writebuf,4096);
 
 	//initialize variables
 	outbit = 0;
 	rate = 0;
 	bytes = 0;
+	count = 0;
 
 	//lead-in byte counter
 	leadin = (DEFAULT_LEAD_IN / 8) - 1;
@@ -206,6 +207,7 @@ static void begin_transfer(void)
 	//enable/disable necessary irq's
     NVIC_DisableIRQ(USBD_IRQn);
     NVIC_DisableIRQ(GPAB_IRQn);
+	NVIC_DisableIRQ(TMR3_IRQn);
     NVIC_EnableIRQ(EINT0_IRQn);
     NVIC_EnableIRQ(TMR1_IRQn);
 	
@@ -456,6 +458,7 @@ static void begin_transfer_loader(void)
 	int dirty = 0;
 
 	printf("beginning transfer...\r\n");
+	fifo_init((fifo_t*)&writefifo,(uint8_t*)writebuf,4096);
 
 	if(disklistpos == -1) {
 		disklistpos = find_disklist();
@@ -469,6 +472,7 @@ static void begin_transfer_loader(void)
 	outbit = 0;
 	rate = 0;
 	bytes = 0;
+	count = 0;
 
 	//lead-in byte counter
 	leadin = (DEFAULT_LEAD_IN / 8) - 1;
@@ -479,6 +483,7 @@ static void begin_transfer_loader(void)
 	//enable/disable necessary irq's
     NVIC_DisableIRQ(USBD_IRQn);
     NVIC_DisableIRQ(GPAB_IRQn);
+	NVIC_DisableIRQ(TMR3_IRQn);
     NVIC_EnableIRQ(EINT0_IRQn);
     NVIC_EnableIRQ(TMR1_IRQn);
 	
@@ -590,11 +595,75 @@ static void begin_transfer_loader(void)
 	LED_GREEN(1);
 }
 
+//writes disk from data stored in the sram
+/*void fds_writedisk(void)
+{
+
+	data2 = 0;
+	bytes = 0;
+	outbit = 0;
+	rate = 0;
+	bytes = 0;
+	count = 0;
+
+    NVIC_DisableIRQ(USBD_IRQn);
+	NVIC_DisableIRQ(TMR1_IRQn);
+    NVIC_DisableIRQ(GPAB_IRQn);
+    NVIC_DisableIRQ(EINT0_IRQn);
+	NVIC_EnableIRQ(TMR3_IRQn);
+	TIMER_Stop(TIMER1);
+	TIMER_Start(TIMER3);
+
+	CLEAR_WRITE();
+	CLEAR_STOPMOTOR();
+	SET_SCANMEDIA();
+
+	printf("checking position of drive head (if already ready)...\n");
+	while(IS_READY()) {
+		
+	}
+
+	printf("waiting on drive to be ready...\n");
+	sram_read_start(0);
+
+	while(IS_READY() == 0) {
+		
+	}
+
+//	printf("drive ready, sending data...\n");
+
+	SET_WRITE();
+
+	needbyte = 0;
+	bytes = 0;
+	count = 0;
+	NVIC_EnableIRQ(TMR3_IRQn);
+
+	while(bytes < 65500 && IS_READY()) {
+		if(needbyte) {
+			needbyte = 0;
+			sram_read_byte(&data2);
+			bytes++;
+		}
+	}
+	printf("finished sending data, sent %d bytes...\n",bytes);
+
+	CLEAR_WRITE();
+	CLEAR_SCANMEDIA();
+	SET_STOPMOTOR();
+	
+	sram_read_end();
+
+	TIMER_Stop(TIMER3);
+	NVIC_DisableIRQ(TMR3_IRQn);
+    NVIC_EnableIRQ(USBD_IRQn);
+}*/
+
 void fds_init(void)
 {
 	int usbattached = USBD_IS_ATTACHED();
 	
-	usbattached = 0;
+//	usbattached = 0;
 	if(usbattached) {
 		fds_setup_diskread();
 		CLEAR_WRITE();
@@ -605,10 +674,8 @@ void fds_init(void)
 		CLEAR_READY();
 		CLEAR_MEDIASET();
 		CLEAR_MOTORON();
-//		fds_insert_disk(0);
+		fds_insert_disk(0);
 	}
-	
-	fifo_init((fifo_t*)&writefifo,(uint8_t*)writebuf,4096);
 }
 
 enum {
@@ -800,4 +867,196 @@ void fds_remove_disk(void)
 	CLEAR_MEDIASET();
 	CLEAR_READY();
 	printf("removing disk\r\n");
+}
+
+int needfinish;
+
+void fds_start_diskread(void)
+{
+	//clear decodebuf
+	memset(tempbuffer,0,4096);
+	bufpos = 0;
+	sentbufpos = 0;
+	needfinish = 0;
+
+	CLEAR_WRITE();
+	CLEAR_STOPMOTOR();
+	SET_SCANMEDIA();
+
+    NVIC_DisableIRQ(EINT0_IRQn);
+    NVIC_DisableIRQ(TMR1_IRQn);
+
+	TIMER_Start(TIMER0);
+    NVIC_EnableIRQ(GPAB_IRQn);
+}
+
+void fds_stop_diskread(void)
+{
+	TIMER_Stop(TIMER0);
+    NVIC_DisableIRQ(GPAB_IRQn);
+
+	CLEAR_WRITE();
+	CLEAR_SCANMEDIA();
+	SET_STOPMOTOR();
+}
+
+static int get_buf_size()
+{
+	int ret = 0;
+
+	if(bufpos >= sentbufpos) {
+		ret = bufpos - sentbufpos;
+	}
+	else {
+		ret = 4096 - sentbufpos;
+		ret += bufpos;
+	}
+	return(ret);
+}
+
+void fds_diskread_getdata(uint8_t *bufbuf, int len)
+{
+	int t,v,w;
+
+	if(IS_READY() == 0) {
+		printf("waiting drive to be ready\n");
+		while(IS_READY() == 0);
+	}
+	
+	while(get_buf_size() < len) {
+//		printf("waiting for data\n");
+	}
+
+	t = sentbufpos + len;
+
+	//if this read will loop around to the beginning of the buffer, handle it
+	if(t >= 4096) {
+		v = 4096 - sentbufpos;
+		w = len - v;
+		memcpy(bufbuf,tempbuffer + sentbufpos,v);
+		memcpy(bufbuf + v,tempbuffer,w);
+		sentbufpos = w;
+	}
+	
+	//this read will be one unbroken chunk of the buffer
+	else {
+		memcpy(bufbuf,tempbuffer + sentbufpos,len);
+		sentbufpos += len;
+	}
+}
+
+#define OUTBUFSIZE	(255 * 1)
+
+volatile uint8_t outbuf[2][OUTBUFSIZE];
+volatile uint8_t *outptr;
+volatile int outpage;
+volatile int outpos;
+volatile int needchunk;
+
+//for sending data out to disk drive
+void TMR3_IRQHandler(void)
+{
+	TIMER_ClearIntFlag(TIMER3);
+
+	//if drive is not ready to be written to, do nothing
+	if(IS_READY() == 0) {
+		CLEAR_WRITE();
+		return;
+	}
+	else {
+		SET_WRITE();
+	}
+
+	//output current bit
+	PB14 = data & 1;
+
+	//shift the data byte over to the next next bit
+	data >>= 1;
+
+	//increment bit counter
+	count++;
+		
+	//if we have sent all eight bits of this byte, get next byte
+	if(count == 8) {
+		count = 0;
+
+		//read next byte from the page
+		data = outptr[outpos++];
+			
+		//signal we need another chunk, and switch chunks
+		if(outpos == OUTBUFSIZE) {
+			needchunk = 0x10 | outpage;
+			outpage ^= 1;
+			outptr = outbuf[outpage];
+			outpos = 0;
+		}
+	}
+}
+
+volatile uint8_t inputbuf[OUTBUFSIZE], *inputptr;
+volatile int inputlen = 0;
+
+void fds_start_diskwrite(void)
+{
+	//clear buffers
+	memset(outbuf[0],0xAA,OUTBUFSIZE);
+	memset(outbuf[1],0xAA,OUTBUFSIZE);
+	data = 0xAA;
+	outptr = outbuf[0];
+	outpage = 0;
+	outpos = 0;
+	needchunk = 0;
+	inputptr = inputbuf;
+	inputlen = 0;
+
+	CLEAR_WRITE();
+	CLEAR_STOPMOTOR();
+	SET_SCANMEDIA();
+
+	TIMER_Stop(TIMER0);
+	TIMER_Stop(TIMER1);
+	TIMER_Start(TIMER3);
+	NVIC_DisableIRQ(TMR1_IRQn);
+    NVIC_DisableIRQ(GPAB_IRQn);
+    NVIC_DisableIRQ(EINT0_IRQn);
+	NVIC_EnableIRQ(TMR3_IRQn);
+}
+
+void fds_stop_diskwrite(void)
+{
+	TIMER_Stop(TIMER3);
+	NVIC_DisableIRQ(TMR3_IRQn);
+	CLEAR_WRITE();
+	CLEAR_SCANMEDIA();
+	SET_STOPMOTOR();
+}
+
+int fds_diskwrite_fillbuf(uint8_t *buf, int len)
+{
+	//copy this portion to the input buffer
+	USBD_MemCopy(inputptr,buf,len);
+	inputptr += len;
+	inputlen += len;
+
+	//if there is more data, wait for it to come before we do anything
+	if(inputlen < OUTBUFSIZE) {
+		return(1);
+	}
+
+	inputptr = inputbuf;
+	inputlen = 0;
+
+	//return code for buffer was filled completely
+	return(0);
+}
+
+int fds_diskwrite(void)
+{
+	if(needchunk) {
+		printf("write buffer underrun, outpos = %d, needchunk = %X\n",outpos,needchunk);
+	}
+	while(needchunk == 0);	
+	memcpy((uint8_t*)outbuf[needchunk & 1],(uint8_t*)inputbuf,OUTBUFSIZE);
+	needchunk = 0;
+	return(0);
 }

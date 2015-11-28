@@ -69,4 +69,7 @@ void fds_tick(void);
 void fds_insert_disk(int block);
 void fds_remove_disk(void);
 	
+int fds_diskwrite_fillbuf(uint8_t *buf, int len);
+int fds_diskwrite(void);
+
 #endif

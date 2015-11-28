@@ -55,6 +55,7 @@ void SYS_Init(void)
     CLK_EnableModuleClock(TMR0_MODULE);
     CLK_EnableModuleClock(TMR1_MODULE);
     CLK_EnableModuleClock(TMR2_MODULE);
+    CLK_EnableModuleClock(TMR3_MODULE);
     CLK_EnableModuleClock(USBD_MODULE);
     CLK_EnableModuleClock(WDT_MODULE);
 
@@ -65,6 +66,7 @@ void SYS_Init(void)
     CLK_SetModuleClock(TMR0_MODULE, CLK_CLKSEL1_TMR0_S_HCLK, 0);
     CLK_SetModuleClock(TMR1_MODULE, CLK_CLKSEL1_TMR1_S_HCLK, 0);
     CLK_SetModuleClock(TMR2_MODULE, CLK_CLKSEL1_TMR2_S_HCLK, 0);
+    CLK_SetModuleClock(TMR3_MODULE, CLK_CLKSEL1_TMR3_S_HCLK, 0);
     CLK_SetModuleClock(USBD_MODULE, 0, CLK_CLKDIV_USB(3));
     CLK_SetModuleClock(WDT_MODULE, CLK_CLKSEL1_WDT_S_LIRC, 0);
 
@@ -214,10 +216,12 @@ int read_char(int *ch)
 	return(-1);
 }
 
+uint8_t crap[256];
+
 static void console_tick(void)
 {
 	int ch = 0;
-
+	
 	if(read_char(&ch) == 0) {
 		int n;
 		char help[] =
@@ -292,7 +296,8 @@ static void console_tick(void)
 			else				printf("motor is not on\n");
  			break;
 		case 'c':
-			printf("trying to read\n");
+			sram_read(3537,crap,256);
+			hexdump("crap",crap,256);
 			break;
 		case 'v':
 			printf("stopping read\n");
@@ -327,7 +332,9 @@ int main()
 
 	TIMER_Open(TIMER0, TIMER_CONTINUOUS_MODE, 6000000);
 	TIMER_Open(TIMER1, TIMER_PERIODIC_MODE, 96400 * 2);
+	TIMER_Open(TIMER3, TIMER_PERIODIC_MODE, 96400 * 2);
 	TIMER_EnableInt(TIMER1);
+	TIMER_EnableInt(TIMER3);
 
 	/* Open USB controller */
     USBD_Open(&gsInfo, HID_ClassRequest, NULL);
@@ -350,11 +357,13 @@ int main()
 	
 	NVIC_SetPriority(USBD_IRQn,2);
 	NVIC_SetPriority(TMR1_IRQn,1);
+	NVIC_SetPriority(TMR3_IRQn,0);
 	NVIC_SetPriority(GPAB_IRQn,0);
 	NVIC_SetPriority(EINT0_IRQn,0);
 	
 	printf("USBD_IRQn priority: %d\n",NVIC_GetPriority(USBD_IRQn));
 	printf("TMR1_IRQn priority: %d\n",NVIC_GetPriority(TMR1_IRQn));
+	printf("TMR3_IRQn priority: %d\n",NVIC_GetPriority(TMR3_IRQn));
 	printf("GPAB_IRQn priority: %d\n",NVIC_GetPriority(GPAB_IRQn));
 	printf("EINT0_IRQn priority: %d\n",NVIC_GetPriority(EINT0_IRQn));
 

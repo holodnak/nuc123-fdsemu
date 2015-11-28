@@ -83,6 +83,7 @@ enum {
     ID_SPI_READ=1,
     ID_SPI_READ_STOP,
     ID_SPI_WRITE,
+    ID_SRAM_WRITE,
 
     ID_READ_IO=0x10,
     ID_DISK_READ_START,
