@@ -105,6 +105,7 @@ void SYS_Init(void)
 	PB5 = 0;
 	PC12 = 0;
 	PC13 = 0;
+    GPIO_SetMode(PA, BIT10, GPIO_PMD_INPUT);
 /*
 	//setup gpio pins for the fds
     GPIO_SetMode(PD, BIT5, GPIO_PMD_INPUT);
@@ -114,7 +115,6 @@ void SYS_Init(void)
     GPIO_SetMode(PD, BIT1, GPIO_PMD_OUTPUT);
     GPIO_SetMode(PD, BIT0, GPIO_PMD_OUTPUT);
 
-    GPIO_SetMode(PA, BIT10, GPIO_PMD_INPUT);
     GPIO_SetMode(PA, BIT11, GPIO_PMD_OUTPUT);
     GPIO_SetMode(PA, BIT12, GPIO_PMD_INPUT);
 //    GPIO_SetMode(PA, BIT13,GPIO_PMD_INPUT);
@@ -218,7 +218,7 @@ int read_char(int *ch)
 
 uint8_t crap[256];
 
-static void console_tick(void)
+void console_tick(void)
 {
 	int ch = 0;
 	

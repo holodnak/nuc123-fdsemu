@@ -238,7 +238,7 @@ static void begin_transfer(void)
 	}
 	
 	//reset byte counter
-	bytes = 512;
+	bytes = 256;
 
 	//transfer disk data
 	while(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
@@ -336,15 +336,19 @@ static void begin_transfer(void)
 
 	//if data was written, write it back to the flash
 	if(dirty) {
-		int flashpage = (diskblock * 0x10000) / 512;
+		int flashpage = (diskblock * 0x10000) / 256;
 		int i;
 
 		printf("sram data is dirty, writing to flash....\r\n");
 		printf("starting flash page: %d\r\n",flashpage);
 
-		//write 512 bytes at a time
-		for(i=0;i<128;i++) {
-			sram_read(i * 512,tempbuffer,512);
+		//first erase the 64kb page
+		flash_erase_block(diskblock);
+		flash_busy_wait();
+
+		//write 256 bytes at a time
+		for(i=0;i<256;i++) {
+			sram_read(i * 256,tempbuffer,256);
 			flash_write_page(flashpage++,tempbuffer);
 			flash_busy_wait();
 		}
@@ -421,7 +425,7 @@ void create_disklist(void)
 
 	memset((uint8_t*)disklist,0,4096 + 2);
 
-	for(i=0;i<blocks;i++) {
+	for(i=1;i<blocks;i++) {
 		
 		//read disk header information
 		flash_read_disk_header(i,&header);
@@ -514,7 +518,7 @@ static void begin_transfer_loader(void)
 	}
 	
 	//reset byte counter
-	bytes = 512;
+	bytes = 256;
 
 	//transfer disk data
 	while(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
@@ -663,7 +667,7 @@ void fds_init(void)
 {
 	int usbattached = USBD_IS_ATTACHED();
 	
-//	usbattached = 0;
+	usbattached = 0;
 	if(usbattached) {
 		fds_setup_diskread();
 		CLEAR_WRITE();
@@ -1012,7 +1016,9 @@ int fds_diskwrite(void)
 
 	sram_read_start(0);
 
+	bytes = 0;
 	printf("waiting on drive to be ready\n");
+//	TIMER_Delay();
 	while(IS_READY() == 0);
 	printf("writing...\n");
 	SET_WRITE();
@@ -1020,7 +1026,13 @@ int fds_diskwrite(void)
 	while(IS_READY()) {
 		if(needbyte) {
 			needbyte = 0;
-			sram_read_byte(&byte);
+			if(bytes < 0x10000) {
+				sram_read_byte(&byte);
+				bytes++;
+			}
+			else {
+				byte = 0;
+			}
 			dataout2 = expand[byte & 0x0F];
 			dataout2 |= expand[(byte & 0xF0) >> 4] << 8;
 		}

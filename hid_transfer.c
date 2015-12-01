@@ -421,6 +421,7 @@ void process_send_feature(uint8_t *usbdata,int len)
 //		startread = 1;
 		printf("process_send_feature: ID_DISK_WRITE_START\n");
 		fds_diskwrite();
+		fds_stop_diskwrite();
 	}
 
 	else if(reportid == ID_SRAM_WRITE) {

@@ -24,8 +24,8 @@ const flashchip_t flashchips[] = {
 	{ID_UNKNOWN,   0x00, 0x00, 0x00, 0x100000}, 	//1mbyte, default small size
 	
 	//flash chips
-	{ID_FLASH,     0xEF, 0x13, 0x00, 0x100000}, 	//1mbyte
-	{ID_FLASH,     0x01, 0x16, 0x00, 0x800000}, 	//8mbyte
+	{ID_FLASH,     0xEF, 0x40, 0x14, 0x100000}, 	//1mbyte
+	{ID_FLASH,     0x01, 0x40, 0x17, 0x800000}, 	//8mbyte
 
 	//dataflash chips
 	{ID_DATAFLASH, 0x1F, 0x27, 0x01, 0x400000}, 	//AT45DB321E - 4mbyte
@@ -221,8 +221,8 @@ void flash_read_page(int page,uint8_t *buf)
 
 	//read the data
 	data[0] = 0x03;
-	data[1] = page >> 7;
-	data[2] = (page << 1);
+	data[1] = page >> 8;
+	data[2] = (page << 0);
 	data[3] = 0x00;
 	spi_select_device(SPI_FLASH, 0);
 	spi_write_packet(SPI_FLASH, data, 4);
@@ -235,16 +235,37 @@ void flash_write_page(int page,uint8_t *buf)
 {
 	uint8_t data[4];
 
-	//write the data
-	data[0] = 0x82;
-	data[1] = (uint8_t)(page >> 7);
-	data[2] = (uint8_t)(page << 1);
-	data[3] = 0x00;
-	spi_select_device(SPI_FLASH, 0);
-	spi_write_packet(SPI_FLASH, data, 4);
-	spi_write_packet(SPI_FLASH, buf, 512);
-	spi_deselect_device(SPI_FLASH, 0);
-//	printf("flash_write_page: writing page %d\n",page);
+	if(chip->type == ID_DATAFLASH) {
+
+		//write the data
+		data[0] = 0x82;
+		data[1] = (uint8_t)(page >> 7);
+		data[2] = (uint8_t)(page << 1);
+		data[3] = 0x00;
+		spi_select_device(SPI_FLASH, 0);
+		spi_write_packet(SPI_FLASH, data, 4);
+		spi_write_packet(SPI_FLASH, buf, 512);
+		spi_deselect_device(SPI_FLASH, 0);
+	//	printf("flash_write_page: writing page %d\n",page);
+	}
+	
+	else {
+		//enable writes
+		data[0] = 0x06;
+		spi_select_device(SPI_FLASH, 0);
+		spi_write_packet(SPI_FLASH, data, 1);
+		spi_deselect_device(SPI_FLASH, 0);
+		
+		//write the data
+		data[0] = 0x02;
+		data[1] = (uint8_t)(page >> 8);
+		data[2] = (uint8_t)(page);
+		data[3] = 0x00;
+		spi_select_device(SPI_FLASH, 0);
+		spi_write_packet(SPI_FLASH, data, 4);
+		spi_write_packet(SPI_FLASH, buf, 256);
+		spi_deselect_device(SPI_FLASH, 0);
+	}
 }
 
 void flash_copy_block(int src,int dest)
