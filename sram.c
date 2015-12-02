@@ -126,7 +126,7 @@ void sram_read_start(int addr)
 	spi_write_packet(SPI_SRAM, data, 3);
 }
 
-void sram_read_end()
+void sram_read_end(void)
 {
 	spi_deselect_device(SPI_SRAM, 0);
 }
