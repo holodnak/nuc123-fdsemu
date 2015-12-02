@@ -18,6 +18,7 @@ static volatile int needbyte;
 
 static volatile uint8_t diskbuffer[DISKBUFFERSIZE];
 static volatile int bufpos, sentbufpos;
+static volatile int bytes;
 
 //for sending data out to disk drive
 void TMR3_IRQHandler(void)
@@ -94,7 +95,6 @@ void fds_stop_diskwrite(void)
 
 int fds_diskwrite(void)
 {
-	static int bytes;
 	uint8_t byte;
 	
 	sram_read_start(0);
@@ -126,7 +126,6 @@ int fds_diskwrite(void)
 }
 
 int needfinish;
-//static int wasready;
 
 void fds_start_diskread(void)
 {
@@ -135,7 +134,7 @@ void fds_start_diskread(void)
 	bufpos = 0;
 	sentbufpos = 0;
 	needfinish = 0;
-//	wasready = 0;
+	bytes = 0;
 
 	CLEAR_WRITE();
 	CLEAR_STOPMOTOR();
@@ -175,25 +174,19 @@ static int get_buf_size()
 void fds_diskread_getdata(uint8_t *bufbuf, int len)
 {
 	int t,v,w;
-	int timeout = 10000;
 
-//	if(wasready == 0) {
+	if(bytes == 0) {
 		if(IS_READY() == 0) {
 			printf("waiting drive to be ready\n");
 			while(IS_READY() == 0);
-			if(timeout-- == 0) {
-				printf("timed out\n");
-			}
 		}
-/*	}
-	else {
-		memset(bufbuf,0,len);
-	}*/
+	}
 	
-	while(get_buf_size() < len) {
+	while(IS_READY() && (get_buf_size() < len)) {
 //		printf("waiting for data\n");
 	}
 
+	bytes += len;
 	t = sentbufpos + len;
 
 	//if this read will loop around to the beginning of the buffer, handle it

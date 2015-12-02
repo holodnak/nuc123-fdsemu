@@ -53,7 +53,7 @@ volatile int decodepos;
 
 __inline uint8_t raw_to_raw03_byte(uint8_t raw)
 {
-	if(raw < 0x50)
+	if(raw < 0x48)
 		return(3);
 	else if(raw < 0x70)
 		return(0);
