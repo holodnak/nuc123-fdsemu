@@ -431,6 +431,7 @@ void process_send_feature(uint8_t *usbdata,int len)
 			spi_select_device(SPI_SRAM, 0);
 			bytes = 0;
 		}
+//		printf("writing sram: initcs = %d, holdcs = %d, size = %d\n",initcs,holdcs,size);
 		spi_write_packet(SPI_SRAM,buf + 4,size);
 		bytes += size;
 		if(holdcs == 0) {

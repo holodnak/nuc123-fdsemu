@@ -116,8 +116,8 @@ const uint8_t gu8ConfigDescriptor[] =
     0x01,           /* bNumInterfaces */
     0x01,           /* bConfigurationValue */
     0x00,           /* iConfiguration */
-    0x80 | (USBD_SELF_POWERED << 6) | (USBD_REMOTE_WAKEUP << 5),/* bmAttributes */
-    USBD_MAX_POWER,         /* MaxPower */
+    0x80,			/* bmAttributes */
+    0xF0,         	/* MaxPower */
 
     /* I/F descr: HID */
     LEN_INTERFACE,  /* bLength */

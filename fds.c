@@ -667,7 +667,7 @@ void fds_init(void)
 {
 	int usbattached = USBD_IS_ATTACHED();
 	
-	usbattached = 0;
+//	usbattached = 0;
 	if(usbattached) {
 		fds_setup_diskread();
 		CLEAR_WRITE();
@@ -874,6 +874,7 @@ void fds_remove_disk(void)
 }
 
 int needfinish;
+static int wasready;
 
 void fds_start_diskread(void)
 {
@@ -882,6 +883,7 @@ void fds_start_diskread(void)
 	bufpos = 0;
 	sentbufpos = 0;
 	needfinish = 0;
+	wasready = 0;
 
 	CLEAR_WRITE();
 	CLEAR_STOPMOTOR();
@@ -921,14 +923,20 @@ static int get_buf_size()
 void fds_diskread_getdata(uint8_t *bufbuf, int len)
 {
 	int t,v,w;
-	int timeout = 1000000;
-	if(IS_READY() == 0) {
-		printf("waiting drive to be ready\n");
-		while(IS_READY() == 0);
-		if(timeout-- == 0) {
-			printf("timed out\n");
+	int timeout = 10000;
+
+//	if(wasready == 0) {
+		if(IS_READY() == 0) {
+			printf("waiting drive to be ready\n");
+			while(IS_READY() == 0);
+			if(timeout-- == 0) {
+				printf("timed out\n");
+			}
 		}
-	}
+/*	}
+	else {
+		memset(bufbuf,0,len);
+	}*/
 	
 	while(get_buf_size() < len) {
 //		printf("waiting for data\n");
@@ -1013,7 +1021,12 @@ void fds_stop_diskwrite(void)
 int fds_diskwrite(void)
 {
 	uint8_t byte;
+	
+	static uint8_t stuff[256];
 
+	sram_read(3535,stuff,256);
+	hexdump("disk+3535",stuff,256);
+	
 	sram_read_start(0);
 
 	bytes = 0;
