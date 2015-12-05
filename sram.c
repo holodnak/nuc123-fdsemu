@@ -4,9 +4,16 @@
 #include "sram.h"
 #include "spiutil.h"
 
+static uint8_t test_data[256];
+
+static int zero_page(int page)
+{
+	memset(test_data,0,256);
+	sram_write(page * 256,test_data,256);
+}
+
 static int test_page(int page, int maxerr)
 {
-	uint8_t test_data[256];
 	int i, errors = 0;
 
 	for(i=0;i<256;i++) {
@@ -33,6 +40,10 @@ void sram_test(int ss)
 {
 	int maxerr = 3;
 	int i, error;
+	
+	for(i=0; i<0x100; i++) {
+		zero_page(i);
+	}
 
 	for(i=0, error=0; i<0x100; i++) {
 		error += test_page(i, maxerr);

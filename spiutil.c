@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include "spiutil.h"
 
-#define SPI_TIMEOUT		20000
+#define SPI_TIMEOUT		25000
 
 void spi_init(void)
 {

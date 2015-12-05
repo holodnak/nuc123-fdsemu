@@ -584,7 +584,7 @@ void fds_init(void)
 {
 	int usbattached = USBD_IS_ATTACHED();
 	
-//	usbattached = 0;
+	usbattached = 0;
 	if(usbattached) {
 		fds_setup_diskread();
 		CLEAR_WRITE();
@@ -767,6 +767,9 @@ void fds_tick(void)
 	}
 }
 
+#define COPYBUFFERSIZE	256
+static uint8_t copybuffer[COPYBUFFERSIZE];
+
 void fds_insert_disk(int block)
 {
 	int i;
@@ -774,9 +777,9 @@ void fds_insert_disk(int block)
 	diskblock = block;
 	fds_setup_transfer();
 	printf("copying image to sram...\r\n");
-	for(i=0;i<64;i++) {
-		flash_read_data((diskblock * 0x10000) + (i * 1024),tempbuffer,1024);
-		sram_write(i * 1024,tempbuffer,1024);
+	for(i=0;i<0x10000;i+=COPYBUFFERSIZE) {
+		flash_read_data((diskblock * 0x10000) + i,copybuffer,COPYBUFFERSIZE);
+		sram_write(i,copybuffer,COPYBUFFERSIZE);
 	}
 	printf("inserting disk at block %d\r\n",block);
 	SET_MEDIASET();

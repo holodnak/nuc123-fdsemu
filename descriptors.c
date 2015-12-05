@@ -36,6 +36,11 @@ const uint8_t HID_DeviceReportDescriptor[] = {
     0x95, 0x3f,                    //   REPORT_COUNT (63)
     0xb1, 0x00,                    //   FEATURE (Data,Ary,Abs)
 
+    0x85, ID_SPI_VERIFY,           //   REPORT_ID (3)
+    0x09, 0x01,                    //   USAGE (Vendor Usage 1)
+    0x95, 0x3f,                    //   REPORT_COUNT (63)
+    0xb1, 0x00,                    //   FEATURE (Data,Ary,Abs)
+
     0x85, ID_SRAM_WRITE,           //   REPORT_ID (4)
     0x09, 0x01,                    //   USAGE (Vendor Usage 1)
     0x95, 0x3f,                    //   REPORT_COUNT (63)
@@ -197,8 +202,6 @@ const uint8_t gu8ProductStringDesc[] =
 	'm', 0, 
 	'u', 0, 
 };
-
-
 
 const uint8_t gu8StringSerial[26] =
 {

@@ -314,8 +314,10 @@ void update_firmware(void)
 {
 	int i;
 	uint32_t addr, data;
+	uint32_t chksum = 0;
 
 	SYS_UnlockReg();
+
 	FMC_Open();
 	FMC_EnableAPUpdate();
 
@@ -324,18 +326,26 @@ void update_firmware(void)
 			printf("FMC_Erase failed\n");
 		}
 	}
+
 	flash_read_start(0x8000);
 	for(i=0x8000;i<0x10000;i+=4) {
 		flash_read((uint8_t*)&data,4);
+		chksum ^= data;
 		FMC_Write(i,data);
 	}
 	flash_read_stop();
 
 	FMC_DisableAPUpdate();
 	FMC_Close();
-	printf("firmware updated, rebooting\n");
 
-//	SYS_LockReg();
+	printf("chksum = %X\n",chksum);
+	if(chksum != 0) {
+		printf("firmware checksum error\n");
+		SYS_LockReg();
+		return;
+	}
+
+	printf("firmware updated, rebooting\n");
 
 	//reboot to bootloader
     FMC->ISPCON = 2;
@@ -375,7 +385,7 @@ void process_send_feature(uint8_t *usbdata,int len)
 	}
 
 	//write firmware to aprom
-	else if(reportid == ID_FIRMWARE_UPDATE) {
+	else if(reportid == ID_UPDATEFIRMWARE) {
 		printf("firmware update requested\n");
 		update_firmware();
 	}
@@ -460,7 +470,7 @@ int get_feature_report(uint8_t reportid, uint8_t *buf)
 		spi_deselect_device(SPI_FLASH, 0);
 //		printf("get_feature_report: ID_SPI_READ_STOP: len = %d\n",len);
 	}
-	
+
 	else if(reportid == ID_DISK_READ) {
 		len = 255;
 		buf[0] = sequence++;
