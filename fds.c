@@ -584,7 +584,7 @@ void fds_init(void)
 {
 	int usbattached = USBD_IS_ATTACHED();
 	
-	usbattached = 0;
+//	usbattached = 0;
 	if(usbattached) {
 		fds_setup_diskread();
 		CLEAR_WRITE();
