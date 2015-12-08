@@ -7,6 +7,7 @@
 #include "spiutil.h"
 #include "fifo.h"
 #include "sram.h"
+#include "main.h"
 
 static const uint8_t expand[]={ 0xaa, 0xa9, 0xa6, 0xa5, 0x9a, 0x99, 0x96, 0x95, 0x6a, 0x69, 0x66, 0x65, 0x5a, 0x59, 0x56, 0x55 };
 
@@ -82,10 +83,14 @@ void fds_start_diskwrite(void)
     NVIC_DisableIRQ(GPAB_IRQn);
     NVIC_DisableIRQ(EINT0_IRQn);
 	NVIC_EnableIRQ(TMR3_IRQn);
+	LED_GREEN(1);
+	LED_RED(1);
 }
 
 void fds_stop_diskwrite(void)
 {
+	LED_GREEN(1);
+	LED_RED(0);
 	TIMER_Stop(TIMER3);
 	NVIC_DisableIRQ(TMR3_IRQn);
 	CLEAR_WRITE();
@@ -102,6 +107,7 @@ int fds_diskwrite(void)
 	bytes = 0;
 	printf("waiting on drive to be ready\n");
 	while(IS_READY() == 0);
+	LED_GREEN(0);
 	printf("writing...\n");
 	SET_WRITE();
 	
@@ -121,7 +127,7 @@ int fds_diskwrite(void)
 	}
 
 	sram_read_end();
-
+	printf("disk write finished.\n");
 	return(0);
 }
 
@@ -145,10 +151,14 @@ void fds_start_diskread(void)
 
 	TIMER_Start(TIMER0);
     NVIC_EnableIRQ(GPAB_IRQn);
+	LED_GREEN(1);
+	LED_RED(1);
 }
 
 void fds_stop_diskread(void)
 {
+	LED_GREEN(1);
+	LED_RED(0);
 	TIMER_Stop(TIMER0);
     NVIC_DisableIRQ(GPAB_IRQn);
 

@@ -100,11 +100,7 @@ void SYS_Init(void)
     SystemCoreClockUpdate();
 
     GPIO_SetMode(PB, BIT5, GPIO_PMD_OUTPUT);
-    GPIO_SetMode(PC, BIT12, GPIO_PMD_OUTPUT);
-    GPIO_SetMode(PC, BIT13, GPIO_PMD_OUTPUT);
 	PB5 = 0;
-	PC12 = 0;
-	PC13 = 0;
     GPIO_SetMode(PA, BIT10, GPIO_PMD_INPUT);
 /*
 	//setup gpio pins for the fds
@@ -319,6 +315,12 @@ void console_tick(void)
 
 int main()
 {
+	//setup led gpio
+    GPIO_SetMode(PC, BIT12, GPIO_PMD_OUTPUT);
+    GPIO_SetMode(PC, BIT13, GPIO_PMD_OUTPUT);
+	LED_GREEN(0);
+	LED_RED(1);
+
     /* Unlock protected registers */
     SYS_UnlockReg();
 
