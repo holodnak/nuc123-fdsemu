@@ -28,7 +28,7 @@ void SYS_Init(void)
     /*---------------------------------------------------------------------------------------------------------*/
 
     /* Enable XT1_OUT(PF0) and XT1_IN(PF1) */
-    SYS->GPF_MFP |= SYS_GPF_MFP_PF0_XT1_OUT | SYS_GPF_MFP_PF1_XT1_IN;
+//    SYS->GPF_MFP |= SYS_GPF_MFP_PF0_XT1_OUT | SYS_GPF_MFP_PF1_XT1_IN;
 
     /* Enable Internal RC 22.1184MHz clock */
     CLK_EnableXtalRC(CLK_PWRCON_OSC22M_EN_Msk);
@@ -40,10 +40,10 @@ void SYS_Init(void)
     CLK_SetHCLK(CLK_CLKSEL0_HCLK_S_HIRC, CLK_CLKDIV_HCLK(1));
 
     /* Enable external XTAL 12MHz clock */
-    CLK_EnableXtalRC(CLK_PWRCON_XTL12M_EN_Msk);
+//    CLK_EnableXtalRC(CLK_PWRCON_XTL12M_EN_Msk);
 
     /* Waiting for external XTAL clock ready */
-    CLK_WaitClockReady(CLK_CLKSTATUS_XTL12M_STB_Msk);
+//    CLK_WaitClockReady(CLK_CLKSTATUS_XTL12M_STB_Msk);
 
     /* Set core clock as HCLK_CLOCK */
     CLK_SetCoreClock(HCLK_CLOCK);
@@ -60,7 +60,7 @@ void SYS_Init(void)
     CLK_EnableModuleClock(WDT_MODULE);
 
     /* Select HCLK as the clock source of SPI0 */
-    CLK_SetModuleClock(UART0_MODULE, CLK_CLKSEL1_UART_S_HXT, CLK_CLKDIV_UART(1));
+    CLK_SetModuleClock(UART0_MODULE, CLK_CLKSEL1_UART_S_HIRC, CLK_CLKDIV_UART(1));
     CLK_SetModuleClock(SPI0_MODULE, CLK_CLKSEL1_SPI0_S_HCLK, MODULE_NoMsk);
     CLK_SetModuleClock(SPI1_MODULE, CLK_CLKSEL1_SPI1_S_HCLK, MODULE_NoMsk);
     CLK_SetModuleClock(TMR0_MODULE, CLK_CLKSEL1_TMR0_S_HCLK, 0);
@@ -353,9 +353,9 @@ int main()
 	LED_GREEN(1);
 	LED_RED(0);
     printf("\n\nnuc123-fdsemu v%d.%02d build %d started.  Compiled on "__DATE__" at "__TIME__"\n",version / 100,version % 100,BUILDNUM);
-    printf("--CPU @ %d MHz\n", SystemCoreClock / 1000000);
-    printf("--SPI0 @ %d MHz\n", SPI_GetBusClock(SPI0) / 1000000);
-    printf("--SPI1 @ %d MHz\n", SPI_GetBusClock(SPI1) / 1000000);
+    printf("--CPU @ %0.3f MHz\n", (double)SystemCoreClock / 1000000.0f);
+    printf("--SPI0 @ %0.3f MHz\n", (double)SPI_GetBusClock(SPI0) / 1000000.0f);
+    printf("--SPI1 @ %0.3f MHz\n", (double)SPI_GetBusClock(SPI1) / 1000000.0f);
 	
 	NVIC_SetPriority(USBD_IRQn,2);
 	NVIC_SetPriority(TMR1_IRQn,1);
