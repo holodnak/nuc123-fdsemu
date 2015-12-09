@@ -28,13 +28,12 @@ volatile uint8_t *writeptr;
 volatile int writepos, writepage;
 volatile uint8_t writebuf[WRITEBUFSIZE];
 
-volatile uint8_t disklistbuf[4096 + 3];
-volatile uint8_t *disklistblock = disklistbuf;
-volatile uint8_t *disklist = disklistbuf + 1;
+uint8_t disklistbuf[4096 + 3];
+uint8_t *disklistblock = disklistbuf;
+uint8_t *disklist = disklistbuf + 1;
 int disklistpos = -1;
 
 static uint8_t tempbuffer[4096];
-
 
 volatile int diskblock = 0;
 
@@ -165,12 +164,10 @@ __inline void check_needbyte(void)
 	}
 }
 
-static void begin_transfer(void)
+static void setup_transfer(void)
 {
-	int leadin = (DEFAULT_LEAD_IN / 8) - 1;
-	int dirty = 0;
+	int leadin;
 
-	printf("beginning transfer...\r\n");
 	fifo_init((fifo_t*)&writefifo,(uint8_t*)writebuf,4096);
 
 	//initialize variables
@@ -178,12 +175,13 @@ static void begin_transfer(void)
 	rate = 0;
 	bytes = 0;
 	count = 0;
+	data2 = 0;
 
 	//lead-in byte counter
 	leadin = (DEFAULT_LEAD_IN / 8) - 1;
 	
-	//finish off the 0.15 second delay
-	TIMER_Delay(TIMER2, 130 * 1000);
+	//delay of minimum 150ms
+	TIMER_Delay(TIMER2, 160 * 1000);
 
 	//enable/disable necessary irq's
     NVIC_DisableIRQ(USBD_IRQn);
@@ -200,8 +198,6 @@ static void begin_transfer(void)
 	SET_READY();
 	
 	LED_RED(1);
-
-	data2 = 0;
 
 	//transfer lead-in
 	while(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
@@ -220,6 +216,14 @@ static void begin_transfer(void)
 	
 	//reset byte counter
 	bytes = 256;
+}
+
+static void begin_transfer(void)
+{
+	int dirty = 0;
+
+	printf("beginning transfer...\r\n");
+	setup_transfer();
 
 	//transfer disk data
 	while(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
@@ -439,11 +443,9 @@ void create_disklist(void)
 
 static void begin_transfer_loader(void)
 {
-	int leadin = (DEFAULT_LEAD_IN / 8) - 1;
 	int dirty = 0;
 
-	printf("beginning transfer...\r\n");
-	fifo_init((fifo_t*)&writefifo,(uint8_t*)writebuf,4096);
+	printf("beginning loader transfer...\r\n");
 
 	if(disklistpos == -1) {
 		disklistpos = find_disklist();
@@ -453,54 +455,8 @@ static void begin_transfer_loader(void)
 
 	sram_write(disklistpos,(uint8_t*)disklist,4096 + 2);
 
-	//initialize variables
-	outbit = 0;
-	rate = 0;
-	bytes = 0;
-	count = 0;
-
-	//lead-in byte counter
-	leadin = (DEFAULT_LEAD_IN / 8) - 1;
+	setup_transfer();
 	
-	//finish off the 0.15 second delay
-	TIMER_Delay(TIMER2, 130 * 1000);
-
-	//enable/disable necessary irq's
-    NVIC_DisableIRQ(USBD_IRQn);
-    NVIC_DisableIRQ(GPAB_IRQn);
-	NVIC_DisableIRQ(TMR3_IRQn);
-    NVIC_EnableIRQ(EINT0_IRQn);
-    NVIC_EnableIRQ(TMR1_IRQn);
-	
-	//start timers
-	TIMER_Start(TIMER0);
-	TIMER_Start(TIMER1);
-
-	//activate ready signal
-	SET_READY();
-	
-	LED_RED(1);
-
-	data2 = 0;
-
-	//transfer lead-in
-	while(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
-		
-		//if irq handler needs more data
-		if(needbyte) {
-			needbyte = 0;
-			bytes++;
-		}
-
-		//check if enough leadin data has been sent
-		if(bytes >= leadin) {
-			break;
-		}
-	}
-	
-	//reset byte counter
-	bytes = 256;
-
 	//transfer disk data
 	while(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
 
@@ -566,8 +522,6 @@ static void begin_transfer_loader(void)
 		in = out = 0;
 		memset(tempbuffer,0,1024);
 		block_decode(tempbuffer,(uint8_t*)writebuf,&in,&out,4096,1024,2,2);
-		
-		hexdump("tempbuffer",tempbuffer,256);
 
 		printf("loader exiting, new diskblock = %d\n",ptr[1]);
 		fds_insert_disk(ptr[1]);
@@ -626,6 +580,9 @@ void fds_setup_transfer(void)
 	GPIO_DisableInt(PA, 11);
     GPIO_EnableEINT0(PB, 14, GPIO_INT_RISING);
 
+	GPIO_ENABLE_DEBOUNCE(PD, BIT4);
+	GPIO_ENABLE_DEBOUNCE(PA, BIT12);
+
 	SYS_LockReg();
 
 	mode = MODE_TRANSFER;
@@ -637,6 +594,9 @@ void fds_setup_diskread(void)
 {
     /* Unlock protected registers */
     SYS_UnlockReg();
+
+	GPIO_DISABLE_DEBOUNCE(PD, BIT4);
+	GPIO_DISABLE_DEBOUNCE(PA, BIT12);
 
 	//setup gpio pins for the fds
 	GPIO_SetMode(PD, BIT5, GPIO_PMD_OUTPUT);	//-write
@@ -754,7 +714,14 @@ void fds_tick(void)
 
 		SET_MOTORON();
 
-		TIMER_Delay(TIMER2, 20 * 1000);
+		if(diskblock == 0) {
+			begin_transfer_loader();
+		}
+		else {
+			begin_transfer();
+		}
+
+/*		TIMER_Delay(TIMER2, 20 * 1000);
 
 		if(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
 			if(diskblock == 0) {
@@ -763,7 +730,7 @@ void fds_tick(void)
 			else {
 				begin_transfer();
 			}
-		}
+		}*/
 	}
 }
 
