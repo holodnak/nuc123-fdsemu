@@ -16,6 +16,8 @@
 #include "hid_transfer.h"
 #include "main.h"
 
+//#define EXTERNAL_XTAL
+
 #define HCLK_CLOCK           72000000
 
 const uint32_t version = VERSION;
@@ -27,9 +29,6 @@ void SYS_Init(void)
     /* Init System Clock                                                                                       */
     /*---------------------------------------------------------------------------------------------------------*/
 
-    /* Enable XT1_OUT(PF0) and XT1_IN(PF1) */
-//    SYS->GPF_MFP |= SYS_GPF_MFP_PF0_XT1_OUT | SYS_GPF_MFP_PF1_XT1_IN;
-
     /* Enable Internal RC 22.1184MHz clock */
     CLK_EnableXtalRC(CLK_PWRCON_OSC22M_EN_Msk);
 
@@ -38,12 +37,6 @@ void SYS_Init(void)
 
     /* Switch HCLK clock source to Internal RC and HCLK source divide 1 */
     CLK_SetHCLK(CLK_CLKSEL0_HCLK_S_HIRC, CLK_CLKDIV_HCLK(1));
-
-    /* Enable external XTAL 12MHz clock */
-//    CLK_EnableXtalRC(CLK_PWRCON_XTL12M_EN_Msk);
-
-    /* Waiting for external XTAL clock ready */
-//    CLK_WaitClockReady(CLK_CLKSTATUS_XTL12M_STB_Msk);
 
     /* Set core clock as HCLK_CLOCK */
     CLK_SetCoreClock(HCLK_CLOCK);
@@ -119,7 +112,7 @@ void SYS_Init(void)
     GPIO_EnableEINT0(PB, 14, GPIO_INT_RISING);
 */
     /* Enable interrupt de-bounce function and select de-bounce sampling cycle time is 1024 clocks of LIRC clock */
-//	GPIO_SET_DEBOUNCE_TIME(GPIO_DBCLKSRC_HCLK, GPIO_DBCLKSEL_4);
+	GPIO_SET_DEBOUNCE_TIME(GPIO_DBCLKSRC_HCLK, GPIO_DBCLKSEL_128);
 //	GPIO_ENABLE_DEBOUNCE(PB, BIT14);
 
 }
