@@ -106,12 +106,12 @@ int fds_diskwrite(void)
 
 	bytes = 0;
 	printf("waiting on drive to be ready\n");
-	while(IS_READY() == 0);
+	while(IS_READY() == 0 && IS_MOTORON());
 	LED_GREEN(0);
 	printf("writing...\n");
 	SET_WRITE();
 	
-	while(IS_READY()) {
+	while(IS_READY() && IS_MOTORON()) {
 		if(needbyte) {
 			needbyte = 0;
 			if(bytes < 0x10000) {
@@ -188,11 +188,11 @@ void fds_diskread_getdata(uint8_t *bufbuf, int len)
 	if(bytes == 0) {
 		if(IS_READY() == 0) {
 			printf("waiting drive to be ready\n");
-			while(IS_READY() == 0);
+			while(IS_READY() == 0 && IS_MOTORON());
 		}
 	}
 	
-	while(IS_READY() && (get_buf_size() < len)) {
+	while(IS_READY() && IS_MOTORON() && (get_buf_size() < len)) {
 //		printf("waiting for data\n");
 	}
 
