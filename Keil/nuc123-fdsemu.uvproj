@@ -489,6 +489,11 @@
               <FileType>1</FileType>
               <FilePath>..\transfer.c</FilePath>
             </File>
+            <File>
+              <FileName>disklist.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\disklist.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
