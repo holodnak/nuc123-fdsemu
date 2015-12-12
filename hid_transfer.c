@@ -390,6 +390,11 @@ void process_send_feature(uint8_t *usbdata,int len)
 		update_firmware();
 	}
 
+	else if(reportid == ID_FIRMWARE_UPDATE) {
+		printf("firmware update requested\n");
+		update_firmware();
+	}
+
 	//spi read
 	else if(reportid == ID_SPI_READ) {
 		switch(buf[4]) {
@@ -474,8 +479,9 @@ int get_feature_report(uint8_t reportid, uint8_t *buf)
 	else if(reportid == ID_DISK_READ) {
 		len = 255;
 		buf[0] = sequence++;
-		fds_diskread_getdata(buf + 1,254);
-		if(IS_READY() == 0) {
+//		fds_diskread_getdata(buf + 1,254);
+//		if(IS_READY() == 0) {
+		if(fds_diskread_getdata(buf + 1,254) == 0) {
 			fds_stop_diskread();
 			len = 1;
 		}

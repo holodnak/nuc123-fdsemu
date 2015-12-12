@@ -446,6 +446,8 @@ void fds_init(void)
 	if(usbattached) {
 		fds_setup_diskread();
 		CLEAR_WRITE();
+		SET_STOPMOTOR();
+		CLEAR_SCANMEDIA();
 	}
 	else {
 		fds_setup_transfer();

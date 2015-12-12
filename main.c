@@ -7,6 +7,17 @@
  * @note
  * Copyright (C) 2014~2015 Nuvoton Technology Corp. All rights reserved.
 *****************************************************************************/
+
+/*
+TODO:
+
+ - when device is first plugged in, and it is connected to a disk drive, it takes a
+ small amount of time to get the pins ready so the drive has a little activity.
+   --solution: move the fds pin init code closer to the beginning of execution.
+   
+ - clean up code
+*/
+
 #include <stdio.h>
 #include "NUC123.h"
 #include "spiutil.h"
@@ -306,11 +317,34 @@ void console_tick(void)
 	}
 }
 
+void debugz(void)
+{
+
+#define GPIO_PIN_DATA2(port, pin)    ((GPIO_PIN_DATA_BASE+(0x40*(port))) + ((pin)<<2))
+#define iPA10            GPIO_PIN_DATA2(0, 10) /*!< Specify PA.10 Pin Data Input/Output */
+#define iPA11            GPIO_PIN_DATA2(0, 11) /*!< Specify PA.11 Pin Data Input/Output */
+#define iPA12            GPIO_PIN_DATA2(0, 12) /*!< Specify PA.12 Pin Data Input/Output */
+#define iPA13            GPIO_PIN_DATA2(0, 13) /*!< Specify PA.13 Pin Data Input/Output */
+#define iPA14            GPIO_PIN_DATA2(0, 14) /*!< Specify PA.14 Pin Data Input/Output */
+#define iPA15            GPIO_PIN_DATA2(0, 15) /*!< Specify PA.15 Pin Data Input/Output */
+#define iPB0             GPIO_PIN_DATA2(1, 0 ) /*!< Specify PB.0 Pin Data Input/Output */
+#define iPB1             GPIO_PIN_DATA2(1, 1 ) /*!< Specify PB.1 Pin Data Input/Output */
+#define iPB2             GPIO_PIN_DATA2(1, 2 ) /*!< Specify PB.2 Pin Data Input/Output */
+#define iPB10            GPIO_PIN_DATA2(1, 10) /*!< Specify PB.10 Pin Data Input/Output */
+	
+printf("PA10 - %08X - %08X %08X\n",iPA10,(uint32_t)PA,BIT10);
+printf("PB10 - %08X - %08X %08X\n",iPB10,(uint32_t)PB,BIT10);
+	
+}
+
 int main()
 {
+	//pc12 = green
+	//pc13 = red
+	
 	//setup led gpio
-    GPIO_SetMode(PC, BIT12, GPIO_PMD_OUTPUT);
-    GPIO_SetMode(PC, BIT13, GPIO_PMD_OUTPUT);
+    GPIO_SetMode(LED_G_PORT, LED_G_PIN, GPIO_PMD_OUTPUT);
+    GPIO_SetMode(LED_R_PORT, LED_R_PIN, GPIO_PMD_OUTPUT);
 	LED_GREEN(0);
 	LED_RED(1);
 
@@ -342,6 +376,8 @@ int main()
 
     /* Enable USB device interrupt */
     NVIC_EnableIRQ(USBD_IRQn);
+
+	debugz();
 
 	LED_GREEN(1);
 	LED_RED(0);

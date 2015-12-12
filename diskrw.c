@@ -181,7 +181,7 @@ static int get_buf_size()
 	return(ret);
 }
 
-void fds_diskread_getdata(uint8_t *bufbuf, int len)
+int fds_diskread_getdata(uint8_t *bufbuf, int len)
 {
 	int t,v,w;
 
@@ -198,6 +198,7 @@ void fds_diskread_getdata(uint8_t *bufbuf, int len)
 
 	bytes += len;
 	t = sentbufpos + len;
+	memset(bufbuf,0,len);
 
 	//if this read will loop around to the beginning of the buffer, handle it
 	if(t >= 4096) {
@@ -213,4 +214,9 @@ void fds_diskread_getdata(uint8_t *bufbuf, int len)
 		memcpy(bufbuf,(uint8_t*)diskbuffer + sentbufpos,len);
 		sentbufpos += len;
 	}
+	
+	if(get_buf_size() == 0 && IS_READY() == 0) {
+		return(0);
+	}
+	return(1);
 }
