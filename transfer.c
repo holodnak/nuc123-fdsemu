@@ -1,3 +1,4 @@
+#if 0
 #include <stdio.h>
 #include <string.h>
 #include "NUC123.h"
@@ -8,7 +9,6 @@
 #include "fifo.h"
 #include "main.h"
 #include "sram.h"
-#include "disklist.h"
 
 /*
 PIN 43 = -write
@@ -29,14 +29,13 @@ volatile uint8_t *writeptr;
 volatile int writepos, writepage;
 volatile uint8_t writebuf[WRITEBUFSIZE];
 
-#define DISKLISTSIZE (8192 + 3)
-
-uint8_t disklistbuf[DISKLISTSIZE];
-uint8_t *disklistblock = disklistbuf;
-uint8_t *disklist = disklistbuf + 1;
+volatile uint8_t disklistbuf[4096 + 3];
+volatile uint8_t *disklistblock = disklistbuf;
+volatile uint8_t *disklist = disklistbuf + 1;
 int disklistpos = -1;
 
-static uint8_t tempbuffer[1024];
+static uint8_t tempbuffer[4096];
+
 
 volatile int diskblock = 0;
 
@@ -99,7 +98,7 @@ void TMR1_IRQHandler(void)
 	TIMER_ClearIntFlag(TIMER1);
 
 	//output current bit
-	PIN_READDATA = (outbit ^ rate) & 1;
+	PA11 = (outbit ^ rate) & 1;
 
 	//toggle rate
 	rate ^= 1;
@@ -167,10 +166,12 @@ __inline void check_needbyte(void)
 	}
 }
 
-static void setup_transfer(void)
+void begin_transfer(void)
 {
-	int leadin;
+	int leadin = (DEFAULT_LEAD_IN / 8) - 1;
+	int dirty = 0;
 
+	printf("beginning transfer...\r\n");
 	fifo_init((fifo_t*)&writefifo,(uint8_t*)writebuf,4096);
 
 	//initialize variables
@@ -178,13 +179,12 @@ static void setup_transfer(void)
 	rate = 0;
 	bytes = 0;
 	count = 0;
-	data2 = 0;
 
 	//lead-in byte counter
 	leadin = (DEFAULT_LEAD_IN / 8) - 1;
 	
-	//delay of minimum 150ms
-	TIMER_Delay(TIMER2, 165 * 1000);
+	//finish off the 0.15 second delay
+	TIMER_Delay(TIMER2, 130 * 1000);
 
 	//enable/disable necessary irq's
     NVIC_DisableIRQ(USBD_IRQn);
@@ -201,6 +201,8 @@ static void setup_transfer(void)
 	SET_READY();
 	
 	LED_RED(1);
+
+	data2 = 0;
 
 	//transfer lead-in
 	while(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
@@ -219,14 +221,6 @@ static void setup_transfer(void)
 	
 	//reset byte counter
 	bytes = 256;
-}
-
-static void begin_transfer(void)
-{
-	int dirty = 0;
-
-	printf("beginning transfer...\r\n");
-	setup_transfer();
 
 	//transfer disk data
 	while(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
@@ -347,16 +341,167 @@ static void begin_transfer(void)
 	printf("transferred %d bytes\r\n",bytes);
 }
 
-static void begin_transfer_loader(void)
+
+//string to find to start sending the fake disklist
+uint8_t diskliststr[17] = {0x80,0x03,0x07,0x10,'D','I','S','K','L','I','S','T',0x00,0x80,0x00,0x10,0x00};
+
+int find_disklist()
 {
+	int pos = 0;
+	int count = 0;
+	uint8_t byte;
+
+	flash_read_start(0);
+	for(pos=0;pos<65500;) {
+
+		//read a byte from the flash
+		flash_read((uint8_t*)&byte,1);
+		pos++;
+		
+		//first byte matches
+		if(byte == diskliststr[0]) {
+			count = 1;
+			do {
+				flash_read((uint8_t*)&byte,1);
+				pos++;
+			} while(byte == diskliststr[count++]);
+			if(count == 18) {
+				printf("found disklist block header at %d (count = %d)\n",pos - count,count);
+
+				//skip over the crc
+				flash_read((uint8_t*)&byte,1);
+				flash_read((uint8_t*)&byte,1);
+				pos += 2;
+
+				//skip the gap
+				do {
+					flash_read((uint8_t*)&byte,1);
+					pos++;
+				} while(byte == 0 && pos < 65500);
+
+				//make sure this is a blocktype of 4
+				if(byte == 0x80) {
+					flash_read((uint8_t*)&byte,1);
+					pos++;
+					if(byte == 4) {
+						flash_read((uint8_t*)&byte,1);
+						printf("hard coded disk count = %d\n",byte);
+						flash_read_stop();
+						return(pos);
+					}
+				}
+			}
+		}
+	}
+	flash_read_stop();
+	return(-1);
+}
+
+void create_disklist(void)
+{
+	uint8_t *list = (uint8_t*)disklist + 32;
+	flash_header_t header;
+	int blocks = flash_get_total_blocks();
+	int i,num = 0;
+	uint32_t crc;
+
+	memset((uint8_t*)disklist,0,4096 + 2);
+
+	for(i=1;i<blocks;i++) {
+		
+		//read disk header information
+		flash_read_disk_header(i,&header);
+		
+		//empty block
+		if((uint8_t)header.name[0] == 0xFF) {
+			continue;
+		}
+
+		//continuation of disk sides
+		if(header.name[0] == 0x00) {
+			continue;
+		}
+
+		list[0] = (uint8_t)i;
+		memcpy(list + 1,header.name,26);
+		list[31] = 0;
+		printf("block %X: id = %02d, '%s'\r\n",i,header.id,header.name);
+		list += 32;
+		num++;
+	}
+	disklistblock[0] = 4;
+	disklist[0] = num;
+
+	//correct
+	crc = calc_crc((uint8_t*)disklistblock,4096 + 1 + 2);
+	disklist[4096] = (uint8_t)(crc >> 0);
+	disklist[4097] = (uint8_t)(crc >> 8);
+}
+
+void begin_transfer_loader(void)
+{
+	int leadin = (DEFAULT_LEAD_IN / 8) - 1;
 	int dirty = 0;
 
-	printf("beginning loader transfer...\r\n");
+	printf("beginning transfer...\r\n");
+	fifo_init((fifo_t*)&writefifo,(uint8_t*)writebuf,4096);
 
-	sram_write(disklistpos,(uint8_t*)disklist,DISKLISTSIZE + 2);
+	if(disklistpos == -1) {
+		disklistpos = find_disklist();
+		printf("find_disklist() = %d\n",disklistpos);
+		create_disklist();
+	}
 
-	setup_transfer();
+	sram_write(disklistpos,(uint8_t*)disklist,4096 + 2);
+
+	//initialize variables
+	outbit = 0;
+	rate = 0;
+	bytes = 0;
+	count = 0;
+
+	//lead-in byte counter
+	leadin = (DEFAULT_LEAD_IN / 8) - 1;
 	
+	//finish off the 0.15 second delay
+	TIMER_Delay(TIMER2, 130 * 1000);
+
+	//enable/disable necessary irq's
+    NVIC_DisableIRQ(USBD_IRQn);
+    NVIC_DisableIRQ(GPAB_IRQn);
+	NVIC_DisableIRQ(TMR3_IRQn);
+    NVIC_EnableIRQ(EINT0_IRQn);
+    NVIC_EnableIRQ(TMR1_IRQn);
+	
+	//start timers
+	TIMER_Start(TIMER0);
+	TIMER_Start(TIMER1);
+
+	//activate ready signal
+	SET_READY();
+	
+	LED_RED(1);
+
+	data2 = 0;
+
+	//transfer lead-in
+	while(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
+		
+		//if irq handler needs more data
+		if(needbyte) {
+			needbyte = 0;
+			bytes++;
+		}
+
+		//check if enough leadin data has been sent
+		if(bytes >= leadin) {
+			break;
+		}
+	}
+	
+	//reset byte counter
+	bytes = 256;
+
 	//transfer disk data
 	while(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
 
@@ -422,6 +567,8 @@ static void begin_transfer_loader(void)
 		in = out = 0;
 		memset(tempbuffer,0,1024);
 		block_decode(tempbuffer,(uint8_t*)writebuf,&in,&out,4096,1024,2,2);
+		
+		hexdump("tempbuffer",tempbuffer,256);
 
 		printf("loader exiting, new diskblock = %d\n",ptr[1]);
 		fds_insert_disk(ptr[1]);
@@ -434,264 +581,4 @@ static void begin_transfer_loader(void)
 	LED_GREEN(1);
 }
 
-void fds_init(void)
-{
-	int usbattached = USBD_IS_ATTACHED();
-	
-//	usbattached = 0;
-	if(usbattached) {
-		fds_setup_diskread();
-		CLEAR_WRITE();
-		SET_STOPMOTOR();
-		CLEAR_SCANMEDIA();
-	}
-	else {
-//		if(disklistpos == -1)
-		{
-			disklistpos = find_disklist();
-			printf("find_disklist() = %d\n",disklistpos);
-			create_disklist();
-		}
-		fds_setup_transfer();
-		CLEAR_WRITABLE();
-		CLEAR_READY();
-		CLEAR_MEDIASET();
-		CLEAR_MOTORON();
-		fds_insert_disk(0);
-	}
-}
-
-enum {
-	MODE_TRANSFER = 0,
-	MODE_DISKREAD
-};
-
-int mode = MODE_TRANSFER;
-
-//setup for talking to the ram adaptor
-void fds_setup_transfer(void)
-{
-    /* Unlock protected registers */
-    SYS_UnlockReg();
-
-#ifdef PROTOTYPE
-	//setup gpio pins for the fds
-    GPIO_SetMode(PD, BIT5, GPIO_PMD_INPUT);
-    GPIO_SetMode(PD, BIT4, GPIO_PMD_INPUT);
-    GPIO_SetMode(PD, BIT3, GPIO_PMD_OUTPUT);
-    GPIO_SetMode(PD, BIT2, GPIO_PMD_OUTPUT);
-    GPIO_SetMode(PD, BIT1, GPIO_PMD_OUTPUT);
-    GPIO_SetMode(PD, BIT0, GPIO_PMD_OUTPUT);
-    GPIO_SetMode(PA, BIT12, GPIO_PMD_INPUT);
-    GPIO_SetMode(PA, BIT11, GPIO_PMD_OUTPUT);
-    GPIO_SetMode(PB, BIT14, GPIO_PMD_INPUT);
-
-	GPIO_DisableInt(PA, 11);
-    GPIO_EnableEINT0(PB, 14, GPIO_INT_RISING);
-
-	GPIO_ENABLE_DEBOUNCE(PD, BIT4);
-	GPIO_ENABLE_DEBOUNCE(PA, BIT12);
-#else
-
-	GPIO_SetMode(PF, BIT3, GPIO_PMD_INPUT);		//-write
-	GPIO_SetMode(PB, BIT8, GPIO_PMD_INPUT);		//-scanmedia
-	GPIO_SetMode(PA, BIT11,GPIO_PMD_OUTPUT);	//motoron
-	GPIO_SetMode(PA, BIT10,GPIO_PMD_OUTPUT);	//-writable
-	GPIO_SetMode(PB, BIT5, GPIO_PMD_OUTPUT);	//-mediaset
-	GPIO_SetMode(PB, BIT6, GPIO_PMD_OUTPUT);	//-ready
-	GPIO_SetMode(PB, BIT7, GPIO_PMD_INPUT);		//-stopmotor
-	GPIO_SetMode(PB, BIT4, GPIO_PMD_OUTPUT);	//read data
-	GPIO_SetMode(PB, BIT14,GPIO_PMD_INPUT);		//write data
-
-	GPIO_DisableInt(PB, 4);
-    GPIO_EnableEINT0(PB, 14, GPIO_INT_RISING);
-
-	GPIO_ENABLE_DEBOUNCE(PD, BIT8);
-	GPIO_ENABLE_DEBOUNCE(PB, BIT7);
-
 #endif
-	SYS_LockReg();
-
-	mode = MODE_TRANSFER;
-	printf("entering ram adaptor transfer mode\n");
-}
-
-//setup for reading/writing disks with the drive
-void fds_setup_diskread(void)
-{
-    /* Unlock protected registers */
-    SYS_UnlockReg();
-
-#ifdef PROTOTYPE
-	GPIO_DISABLE_DEBOUNCE(PD, BIT4);
-	GPIO_DISABLE_DEBOUNCE(PA, BIT12);
-
-	//setup gpio pins for the fds
-	GPIO_SetMode(PD, BIT5, GPIO_PMD_OUTPUT);	//-write
-	GPIO_SetMode(PD, BIT4, GPIO_PMD_OUTPUT);	//-scanmedia
-	GPIO_SetMode(PD, BIT3, GPIO_PMD_INPUT);		//motoron
-	GPIO_SetMode(PD, BIT2, GPIO_PMD_INPUT);		//-writable
-	GPIO_SetMode(PD, BIT1, GPIO_PMD_INPUT);		//-mediaset
-	GPIO_SetMode(PD, BIT0, GPIO_PMD_INPUT);		//-ready
-	GPIO_SetMode(PA, BIT12, GPIO_PMD_OUTPUT);	//-stopmotor
-	GPIO_SetMode(PA, BIT11, GPIO_PMD_INPUT);	//read data
-	GPIO_SetMode(PB, BIT14, GPIO_PMD_OUTPUT);	//write data
-
-	GPIO_DisableEINT0(PB, 14);
-	GPIO_EnableInt(PA, 11, GPIO_INT_RISING);
-#else
-	GPIO_DISABLE_DEBOUNCE(PD, BIT4);
-	GPIO_DISABLE_DEBOUNCE(PA, BIT12);
-
-	//setup gpio pins for the fds
-	GPIO_SetMode(PF, BIT3, GPIO_PMD_OUTPUT);	//-write
-	GPIO_SetMode(PB, BIT8, GPIO_PMD_OUTPUT);	//-scanmedia
-	GPIO_SetMode(PA, BIT11, GPIO_PMD_INPUT);		//motoron
-	GPIO_SetMode(PA, BIT10, GPIO_PMD_INPUT);		//-writable
-	GPIO_SetMode(PB, BIT5, GPIO_PMD_INPUT);		//-mediaset
-	GPIO_SetMode(PB, BIT6, GPIO_PMD_INPUT);		//-ready
-	GPIO_SetMode(PB, BIT7, GPIO_PMD_OUTPUT);	//-stopmotor
-	GPIO_SetMode(PB, BIT4, GPIO_PMD_INPUT);	//read data
-	GPIO_SetMode(PB, BIT14, GPIO_PMD_OUTPUT);	//write data
-
-	GPIO_DisableEINT0(PB, 14);
-	GPIO_EnableInt(PB, 4, GPIO_INT_RISING);
-
-#endif
-
-	SYS_LockReg();
-
-	mode = MODE_DISKREAD;
-	printf("entering disk read mode\n");
-}
-
-int find_first_disk_side(int block)
-{
-	flash_header_t header;
-
-	//ensure this isnt the first block, if it is this must be the first side of a disk
-	if(block == 0) {
-		return(block);
-	}
-
-	//keep going in reverse to find the first disk side
-	while(block > 0) {
-
-		flash_read_disk_header(block,&header);
-		
-		//part of a multiside game
-		if(header.name[0] != 0) {
-			break;
-		}
-
-		block--;
-	}
-
-	return(block);
-}
-
-int mediaset = 0;
-int ready = 0;
-
-void fds_tick(void)
-{
-	if(mode == MODE_DISKREAD) {
-		if(IS_MEDIASET() && mediaset == 0) {
-			mediaset = 1;
-			printf("disk inserted\n");
-			if(IS_WRITABLE()) {
-				printf("...and it is writable\n");
-			}
-		}
-		if(IS_MEDIASET() == 0) {
-			if(mediaset) {
-				printf("disk ejected\n");
-			}
-			mediaset = 0;
-		}
-		if(IS_READY() && ready == 0) {
-			ready = 1;
-			printf("ready activated\n");
-		}
-		if(IS_READY() == 0) {
-			if(ready) {
-				printf("ready deactivated\n");
-				CLEAR_SCANMEDIA();
-				SET_STOPMOTOR();
-			}
-			ready = 0;
-		}
-		return;
-	}
-	
-	//if the button has been pressed to flip disk sides
-	if(SWITCH != 0) {
-		flash_header_t header;
-		
-		flash_read_disk_header(diskblock + 1,&header);
-		
-		//filename is 0's...must be more sides to this disk
-		if(header.name[0] == 0) {
-			diskblock++;
-		}
-		
-		//try to find the first disk side
-		else {
-			diskblock = find_first_disk_side(diskblock);
-		}
-
-		printf("new disk side slot = %d\n",diskblock);
-		CLEAR_MEDIASET();
-		TIMER_Delay(TIMER2,1000 * 1000);
-		fds_insert_disk(diskblock);
-		
-		//wait for button to be released before we insert disk
-		while(SWITCH != 0);
-
-		SET_MEDIASET();			
-	}
-	
-	//check if ram adaptor wants to stop the motor
-	if(IS_STOPMOTOR()) {
-		CLEAR_MOTORON();
-	}
-
-	//if ram adaptor wants to scan the media and run the motor
-	if(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
-
-		SET_MOTORON();
-
-		if(diskblock == 0) {
-			begin_transfer_loader();
-		}
-		else {
-			begin_transfer();
-		}
-	}
-}
-
-#define COPYBUFFERSIZE	256
-static uint8_t copybuffer[COPYBUFFERSIZE];
-
-void fds_insert_disk(int block)
-{
-	int i;
-
-	diskblock = block;
-	fds_setup_transfer();
-	printf("copying image to sram...\r\n");
-	for(i=0;i<0x10000;i+=COPYBUFFERSIZE) {
-		flash_read_data((diskblock * 0x10000) + i,copybuffer,COPYBUFFERSIZE);
-		sram_write(i,copybuffer,COPYBUFFERSIZE);
-	}
-	printf("inserting disk at block %d\r\n",block);
-	SET_MEDIASET();
-	SET_WRITABLE();
-}
-
-void fds_remove_disk(void)
-{
-	CLEAR_MEDIASET();
-	CLEAR_READY();
-	printf("removing disk\r\n");
-}

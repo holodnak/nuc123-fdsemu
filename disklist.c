@@ -10,7 +10,7 @@ extern uint8_t *disklist;
 extern int disklistpos;
 
 //string to find to start sending the fake disklist
-const uint8_t diskliststr[17] = {0x80,0x03,0x07,0x10,'D','I','S','K','L','I','S','T',0x00,0x80,0x00,0x10,0x00};
+const uint8_t diskliststr[17] = {0x80,0x03,0x07,0x10,'D','I','S','K','L','I','S','T',0x00,0x80,0x00,0x20,0x00};
 
 int find_disklist()
 {
@@ -72,7 +72,7 @@ void create_disklist(void)
 	int i,num = 0;
 	uint32_t crc;
 
-	memset((uint8_t*)disklist,0,4096 + 2);
+	memset((uint8_t*)disklist,0,8192 + 2);
 
 	for(i=1;i<blocks;i++) {
 		
@@ -98,9 +98,10 @@ void create_disklist(void)
 	}
 	disklistblock[0] = 4;
 	disklist[0] = num;
+	printf("number of disks found = %d\n",num);
 
 	//correct
-	crc = calc_crc((uint8_t*)disklistblock,4096 + 1 + 2);
-	disklist[4096] = (uint8_t)(crc >> 0);
-	disklist[4097] = (uint8_t)(crc >> 8);
+	crc = calc_crc((uint8_t*)disklistblock,8192 + 1 + 2);
+	disklist[8192 + 0] = (uint8_t)(crc >> 0);
+	disklist[8192 + 1] = (uint8_t)(crc >> 8);
 }

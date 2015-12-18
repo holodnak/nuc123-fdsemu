@@ -2,6 +2,7 @@
 #include "NUC123.h"
 #include "flash.h"
 #include "spiutil.h"
+#include "config.h"
 
 enum {
 	ID_UNKNOWN = 0,		//unknown flash type
@@ -25,6 +26,10 @@ const flashchip_t flashchips[] = {
 	
 	//flash chips
 	{ID_FLASH,     0xEF, 0x40, 0x14, 0x100000}, 	//1mbyte
+	{ID_FLASH,     0xEF, 0x40, 0x16, 0x400000}, 	//4mbyte
+	{ID_FLASH,     0xEF, 0x40, 0x17, 0x800000}, 	//8mbyte
+	{ID_FLASH,     0xEF, 0x40, 0x18, 0x1000000}, 	//16mbyte
+
 	{ID_FLASH,     0x01, 0x40, 0x17, 0x800000}, 	//8mbyte
 
 	//dataflash chips
@@ -349,11 +354,7 @@ int flash_get_size(void)
 
 int flash_get_total_blocks(void)
 {
-	int size = flash_get_size();
-	int blocks = size / 0x10000;
-	
-	//we need one block to use for writing, writes will re-organize the order of the disks stored in flash
-	return(blocks - 1);
+	return(flash_get_size() / 0x10000);
 }
 
 int flash_find_empty_block(void)

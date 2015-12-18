@@ -15,6 +15,7 @@
 #include "spiutil.h"
 #include "fds.h"
 #include "sram.h"
+#include "config.h"
 
 uint8_t volatile g_u8EP2Ready = 0;
 
@@ -477,13 +478,17 @@ int get_feature_report(uint8_t reportid, uint8_t *buf)
 	}
 
 	else if(reportid == ID_DISK_READ) {
-		len = 255;
+/*		len = 255;
 		buf[0] = sequence++;
-//		fds_diskread_getdata(buf + 1,254);
-//		if(IS_READY() == 0) {
 		if(fds_diskread_getdata(buf + 1,254) == 0) {
 			fds_stop_diskread();
 			len = 1;
+		}
+*/
+		buf[0] = sequence++;
+		len = fds_diskread_getdata(buf + 1,254) + 1;
+		if(len < 255) {
+			fds_stop_diskread();
 		}
 	}
 

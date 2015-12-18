@@ -26,6 +26,7 @@ TODO:
 #include "fds.h"
 #include "hid_transfer.h"
 #include "main.h"
+#include "config.h"
 
 //#define EXTERNAL_XTAL
 
@@ -103,29 +104,8 @@ void SYS_Init(void)
     /* User can use SystemCoreClockUpdate() to calculate SystemCoreClock and cyclesPerUs automatically. */
     SystemCoreClockUpdate();
 
-    GPIO_SetMode(PB, BIT5, GPIO_PMD_OUTPUT);
-	PB5 = 0;
-    GPIO_SetMode(PA, BIT10, GPIO_PMD_INPUT);
-/*
-	//setup gpio pins for the fds
-    GPIO_SetMode(PD, BIT5, GPIO_PMD_INPUT);
-    GPIO_SetMode(PD, BIT4, GPIO_PMD_INPUT);
-    GPIO_SetMode(PD, BIT3, GPIO_PMD_OUTPUT);
-    GPIO_SetMode(PD, BIT2, GPIO_PMD_OUTPUT);
-    GPIO_SetMode(PD, BIT1, GPIO_PMD_OUTPUT);
-    GPIO_SetMode(PD, BIT0, GPIO_PMD_OUTPUT);
-
-    GPIO_SetMode(PA, BIT11, GPIO_PMD_OUTPUT);
-    GPIO_SetMode(PA, BIT12, GPIO_PMD_INPUT);
-//    GPIO_SetMode(PA, BIT13,GPIO_PMD_INPUT);
-
-    GPIO_SetMode(PB, BIT14, GPIO_PMD_INPUT);
-    GPIO_EnableEINT0(PB, 14, GPIO_INT_RISING);
-*/
     /* Enable interrupt de-bounce function and select de-bounce sampling cycle time is 1024 clocks of LIRC clock */
 	GPIO_SET_DEBOUNCE_TIME(GPIO_DBCLKSRC_HCLK, GPIO_DBCLKSEL_128);
-//	GPIO_ENABLE_DEBOUNCE(PB, BIT14);
-
 }
 
 void UART0_Init()
@@ -147,8 +127,8 @@ void SPI_Init(void)
     /*---------------------------------------------------------------------------------------------------------*/
     /* Configure as a master, clock idle low, 32-bit transaction, drive output on falling clock edge and latch input on rising edge. */
     /* Set IP clock divider. SPI clock rate = 2MHz */
-    SPI_Open(SPI0, SPI_MASTER, SPI_MODE_0, 8, 35000000);
-    SPI_Open(SPI1, SPI_MASTER, SPI_MODE_0, 8, 20000000);
+    SPI_Open(SPI_FLASH, SPI_MASTER, SPI_MODE_0, 8, 35000000);
+    SPI_Open(SPI_SRAM, SPI_MASTER, SPI_MODE_0, 8, 20000000);
 }
 
 static void print_block_info(int block)
@@ -321,6 +301,7 @@ void debugz(void)
 {
 
 #define GPIO_PIN_DATA2(port, pin)    ((GPIO_PIN_DATA_BASE+(0x40*(port))) + ((pin)<<2))
+#define iPA1            GPIO_PIN_DATA2(0, 1) /*!< Specify PA.10 Pin Data Input/Output */
 #define iPA10            GPIO_PIN_DATA2(0, 10) /*!< Specify PA.10 Pin Data Input/Output */
 #define iPA11            GPIO_PIN_DATA2(0, 11) /*!< Specify PA.11 Pin Data Input/Output */
 #define iPA12            GPIO_PIN_DATA2(0, 12) /*!< Specify PA.12 Pin Data Input/Output */
@@ -331,20 +312,33 @@ void debugz(void)
 #define iPB1             GPIO_PIN_DATA2(1, 1 ) /*!< Specify PB.1 Pin Data Input/Output */
 #define iPB2             GPIO_PIN_DATA2(1, 2 ) /*!< Specify PB.2 Pin Data Input/Output */
 #define iPB10            GPIO_PIN_DATA2(1, 10) /*!< Specify PB.10 Pin Data Input/Output */
+#define iPB11            GPIO_PIN_DATA2(1, 11) /*!< Specify PB.10 Pin Data Input/Output */
 	
+printf("PA1 - %08X - %08X %08X\n",iPA1,(uint32_t)PA,BIT1);
 printf("PA10 - %08X - %08X %08X\n",iPA10,(uint32_t)PA,BIT10);
+printf("PA11 - %08X - %08X %08X\n",iPA11,(uint32_t)PA,BIT11);
+printf("PA12 - %08X - %08X %08X\n",iPA12,(uint32_t)PA,BIT12);
 printf("PB10 - %08X - %08X %08X\n",iPB10,(uint32_t)PB,BIT10);
-	
+printf("PB11 - %08X - %08X %08X\n",iPB11,(uint32_t)PB,BIT11);
+
+#define MAKE_PORT(nn)	(((((uint32_t)&(nn)) - (uint32_t)GPIO_PIN_DATA_BASE) & 0x1C0) + GPIO_BASE)
+#define MAKE_PIN(nn)	(1 << (((((uint32_t)&(nn)) - (uint32_t)GPIO_PIN_DATA_BASE) & 0x3F) / 4))
+
+printf("PB10 %08X - %08X %08X - %08X %08X\n",&PB10,(uint32_t)PB,BIT10,MAKE_PORT(PB10),MAKE_PIN(PB10));
 }
 
 int main()
 {
 	//pc12 = green
 	//pc13 = red
+	CLEAR_WRITE();
+	SET_STOPMOTOR();
+	CLEAR_SCANMEDIA();
 	
-	//setup led gpio
+	//setup led and button gpio
     GPIO_SetMode(LED_G_PORT, LED_G_PIN, GPIO_PMD_OUTPUT);
     GPIO_SetMode(LED_R_PORT, LED_R_PIN, GPIO_PMD_OUTPUT);
+    GPIO_SetMode(SWITCH_PORT, SWITCH_PIN, GPIO_PMD_INPUT);
 	LED_GREEN(0);
 	LED_RED(1);
 
@@ -377,7 +371,7 @@ int main()
     /* Enable USB device interrupt */
     NVIC_EnableIRQ(USBD_IRQn);
 
-	debugz();
+//	debugz();
 
 	LED_GREEN(1);
 	LED_RED(0);

@@ -3,6 +3,7 @@
 #include "nuc123.h"
 #include "sram.h"
 #include "spiutil.h"
+#include "config.h"
 
 static uint8_t test_data[256];
 

@@ -14,6 +14,8 @@ PIN 48 = data
 PIN 47 = rate
 */
 
+#ifdef PROTOTYPE
+
 #define SET_READY()			PD0 = 0
 #define SET_MEDIASET()		PD1 = 0
 #define SET_WRITABLE()		PD2 = 0
@@ -41,6 +43,48 @@ PIN 47 = rate
 #define IS_MEDIASET()		(PD1 == 0)
 #define IS_WRITABLE()		(PD2 == 0)
 #define IS_MOTORON()		(PD3 == 1)
+
+#else
+
+#define PIN_WRITE			PF3
+#define PIN_SCANMEDIA		PB8
+#define PIN_WRITEDATA		PB14
+#define PIN_MOTORON			PA11
+#define PIN_WRITABLE		PA10
+#define PIN_READDATA		PB4
+#define PIN_MEDIASET		PB5
+#define PIN_READY			PB6
+#define PIN_STOPMOTOR		PB7
+
+#define SET_READY()			PIN_READY = 0
+#define SET_MEDIASET()		PIN_MEDIASET = 0
+#define SET_WRITABLE()		PIN_WRITABLE = 0
+#define SET_MOTORON()		PIN_MOTORON = 1
+
+#define CLEAR_READY()		PIN_READY = 1
+#define CLEAR_MEDIASET()	PIN_MEDIASET = 1
+#define CLEAR_WRITABLE()	PIN_WRITABLE = 1
+#define CLEAR_MOTORON()		PIN_MOTORON = 0
+
+#define IS_WRITE()			(PIN_WRITE == 0)
+#define IS_SCANMEDIA()		(PIN_SCANMEDIA == 0)
+#define IS_STOPMOTOR()		(PIN_STOPMOTOR == 0)
+#define IS_DONT_STOPMOTOR()	(PIN_STOPMOTOR != 0)
+
+#define SET_WRITE()			PIN_WRITE = 0
+#define SET_SCANMEDIA()		PIN_SCANMEDIA = 0
+#define SET_STOPMOTOR()		PIN_STOPMOTOR = 0
+
+#define CLEAR_WRITE()		PIN_WRITE = 1
+#define CLEAR_SCANMEDIA()	PIN_SCANMEDIA = 1
+#define CLEAR_STOPMOTOR()	PIN_STOPMOTOR = 1
+
+#define IS_READY()			(PIN_READY == 0)
+#define IS_MEDIASET()		(PIN_MEDIASET == 0)
+#define IS_WRITABLE()		(PIN_WRITABLE == 0)
+#define IS_MOTORON()		(PIN_MOTORON == 1)
+
+#endif
 
 #define TRANSFER_RATE		96400
 #define FDS_KHZ(hz)			(hz / TRANSFER_RATE)

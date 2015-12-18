@@ -27,7 +27,7 @@ void TMR3_IRQHandler(void)
 	TIMER_ClearIntFlag(TIMER3);
 
 	//output current bit
-	PB14 = dataout & 1;
+	PIN_WRITEDATA = dataout & 1;
 
 	//shift the data byte over to the next next bit
 	dataout >>= 1;
@@ -50,11 +50,15 @@ void TMR3_IRQHandler(void)
 //for data coming out of the disk drive
 void GPAB_IRQHandler(void)
 {
-    if(GPIO_GET_INT_FLAG(PA, BIT11)) {
-		int ra;
+int ra;
 
-//		printf("GPAB_IRQHandler");
+#ifdef PROTOTYPE
+    if(GPIO_GET_INT_FLAG(PA, BIT11)) {
 		GPIO_CLR_INT_FLAG(PA, BIT11);
+#else
+    if(GPIO_GET_INT_FLAG(PB, BIT4)) {		
+		GPIO_CLR_INT_FLAG(PB, BIT4);
+#endif
 		ra = TIMER_GetCounter(TIMER0);
 		TIMER0->TCSR = TIMER_TCSR_CRST_Msk;
 		TIMER0->TCSR = TIMER_CONTINUOUS_MODE | 7 | TIMER_TCSR_TDR_EN_Msk | TIMER_TCSR_CEN_Msk;
@@ -180,7 +184,7 @@ static int get_buf_size()
 	}
 	return(ret);
 }
-
+/*
 int fds_diskread_getdata(uint8_t *bufbuf, int len)
 {
 	int t,v,w;
@@ -198,7 +202,7 @@ int fds_diskread_getdata(uint8_t *bufbuf, int len)
 
 	bytes += len;
 	t = sentbufpos + len;
-	memset(bufbuf,0,len);
+	memset(bufbuf,0x50,len);
 
 	//if this read will loop around to the beginning of the buffer, handle it
 	if(t >= 4096) {
@@ -215,8 +219,53 @@ int fds_diskread_getdata(uint8_t *bufbuf, int len)
 		sentbufpos += len;
 	}
 	
-	if(get_buf_size() == 0 && IS_READY() == 0) {
+	if(IS_READY() == 0) {
 		return(0);
 	}
 	return(1);
+}
+*/
+
+int fds_diskread_getdata(uint8_t *bufbuf, int len)
+{
+	int t,v,w,n;
+
+	if(bytes == 0) {
+		if(IS_READY() == 0) {
+			printf("waiting drive to be ready\n");
+			while(IS_READY() == 0 && IS_MOTORON());
+		}
+	}
+	
+	while(IS_READY() && IS_MOTORON() && ((n = get_buf_size()) < len)) {
+//		printf("waiting for data\n");
+	}
+	
+	if(n < len) {
+		len = n;
+	}
+
+	bytes += len;
+	t = sentbufpos + len;
+	memset(bufbuf,0x50,len);
+
+	//if this read will loop around to the beginning of the buffer, handle it
+	if(t >= 4096) {
+		v = 4096 - sentbufpos;
+		w = len - v;
+		memcpy(bufbuf,(uint8_t*)diskbuffer + sentbufpos,v);
+		memcpy(bufbuf + v,(uint8_t*)diskbuffer,w);
+		sentbufpos = w;
+	}
+	
+	//this read will be one unbroken chunk of the buffer
+	else {
+		memcpy(bufbuf,(uint8_t*)diskbuffer + sentbufpos,len);
+		sentbufpos += len;
+	}
+	
+//	if(IS_READY() == 0) {
+//		return(0);
+//	}
+	return(len);
 }
