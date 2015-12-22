@@ -422,6 +422,8 @@ static void begin_transfer_loader(void)
 		in = out = 0;
 		memset(tempbuffer,0,1024);
 		block_decode(tempbuffer,(uint8_t*)writebuf,&in,&out,4096,1024,2,2);
+		
+//		hexdump("tempbuffer",tempbuffer,256);
 
 		printf("loader exiting, new diskblock = %d\n",ptr[1]);
 		fds_insert_disk(ptr[1]);
