@@ -285,14 +285,6 @@ void console_tick(void)
 			CLEAR_SCANMEDIA();
 			SET_STOPMOTOR();
 			break;
-		case 'q':
-			printf("really erase chip? (y/n)\n");
-			if(GetChar() == 'y') {
-				printf("erasing chip...");
-				flash_chip_erase();
-				printf("done\n");
-			}
-			break;
 		}
 	}
 }

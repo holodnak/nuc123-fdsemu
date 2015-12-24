@@ -7,7 +7,7 @@
 
 static uint8_t test_data[256];
 
-static int zero_page(int page)
+static void zero_page(int page)
 {
 	memset(test_data,0,256);
 	sram_write(page * 256,test_data,256);
@@ -85,9 +85,6 @@ void sram_write_status(uint8_t status)
 
 void sram_init_device(int ss)
 {
-	uint8_t data[16 + 1];
-	int i;
-
 	//ensure it is in sequencial mode
 	sram_write_status(0x40);
 

@@ -29,13 +29,6 @@ volatile uint8_t *writeptr;
 volatile int writepos, writepage;
 volatile uint8_t writebuf[WRITEBUFSIZE];
 
-#define DISKLISTSIZE (8192 + 3)
-
-uint8_t disklistbuf[DISKLISTSIZE];
-uint8_t *disklistblock = disklistbuf;
-uint8_t *disklist = disklistbuf + 1;
-int disklistpos = -1;
-
 static uint8_t tempbuffer[1024];
 
 volatile int diskblock = 0;
@@ -353,7 +346,7 @@ static void begin_transfer_loader(void)
 
 	printf("beginning loader transfer...\r\n");
 
-	sram_write(disklistpos,(uint8_t*)disklist,DISKLISTSIZE + 2);
+//	sram_write(disklistpos,(uint8_t*)disklist,DISKLISTSIZE + 2);
 
 	setup_transfer();
 	
@@ -448,18 +441,14 @@ void fds_init(void)
 		CLEAR_SCANMEDIA();
 	}
 	else {
-//		if(disklistpos == -1)
-		{
-			disklistpos = find_disklist();
-			printf("find_disklist() = %d\n",disklistpos);
-			create_disklist();
-		}
 		fds_setup_transfer();
 		CLEAR_WRITABLE();
 		CLEAR_READY();
 		CLEAR_MEDIASET();
 		CLEAR_MOTORON();
-		fds_insert_disk(0);
+		
+		//insert loader image
+		fds_insert_disk(-1);
 	}
 }
 
@@ -663,7 +652,7 @@ void fds_tick(void)
 
 		SET_MOTORON();
 
-		if(diskblock == 0) {
+		if(diskblock == -1) {
 			begin_transfer_loader();
 		}
 		else {
@@ -675,18 +664,30 @@ void fds_tick(void)
 #define COPYBUFFERSIZE	256
 static uint8_t copybuffer[COPYBUFFERSIZE];
 
+void loader_copy(void);
+
 void fds_insert_disk(int block)
 {
 	int i;
 
 	diskblock = block;
 	fds_setup_transfer();
-	printf("copying image to sram...\r\n");
-	for(i=0;i<0x10000;i+=COPYBUFFERSIZE) {
-		flash_read_data((diskblock * 0x10000) + i,copybuffer,COPYBUFFERSIZE);
-		sram_write(i,copybuffer,COPYBUFFERSIZE);
+	
+	//decompress loader to sram
+	if(block == -1) {
+		loader_copy();
+		printf("inserting loader disk image\r\n");
 	}
-	printf("inserting disk at block %d\r\n",block);
+	
+	//copy image from flash to sram
+	else {
+		printf("copying image to sram...\r\n");
+		for(i=0;i<0x10000;i+=COPYBUFFERSIZE) {
+			flash_read_data((diskblock * 0x10000) + i,copybuffer,COPYBUFFERSIZE);
+			sram_write(i,copybuffer,COPYBUFFERSIZE);
+		}
+		printf("inserting disk at block %d\r\n",block);
+	}
 	SET_MEDIASET();
 	SET_WRITABLE();
 }

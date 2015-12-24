@@ -235,6 +235,9 @@ int fds_diskread_getdata(uint8_t *bufbuf, int len)
 			printf("waiting drive to be ready\n");
 			while(IS_READY() == 0 && IS_MOTORON());
 		}
+		else {
+			printf("drive ready, starting read\n");
+		}
 	}
 	
 	while(IS_READY() && IS_MOTORON() && ((n = get_buf_size()) < len)) {

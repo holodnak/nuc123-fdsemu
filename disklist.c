@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "NUC123.h"
+#include "sram.h"
 #include "flash.h"
 #include "fdsutil.h"
 
@@ -18,49 +19,49 @@ int find_disklist()
 	int count = 0;
 	uint8_t byte;
 
-	flash_read_start(0);
+	sram_read_start(0);
 	for(pos=0;pos<65500;) {
 
 		//read a byte from the flash
-		flash_read((uint8_t*)&byte,1);
+		sram_read_byte((uint8_t*)&byte);
 		pos++;
 		
 		//first byte matches
 		if(byte == diskliststr[0]) {
 			count = 1;
 			do {
-				flash_read((uint8_t*)&byte,1);
+				sram_read_byte((uint8_t*)&byte);
 				pos++;
 			} while(byte == diskliststr[count++]);
 			if(count == 18) {
 				printf("found disklist block header at %d (count = %d)\n",pos - count,count);
 
 				//skip over the crc
-				flash_read((uint8_t*)&byte,1);
-				flash_read((uint8_t*)&byte,1);
+				sram_read_byte((uint8_t*)&byte);
+				sram_read_byte((uint8_t*)&byte);
 				pos += 2;
 
 				//skip the gap
 				do {
-					flash_read((uint8_t*)&byte,1);
+					sram_read_byte((uint8_t*)&byte);
 					pos++;
 				} while(byte == 0 && pos < 65500);
 
 				//make sure this is a blocktype of 4
 				if(byte == 0x80) {
-					flash_read((uint8_t*)&byte,1);
+					sram_read_byte((uint8_t*)&byte);
 					pos++;
 					if(byte == 4) {
-						flash_read((uint8_t*)&byte,1);
+						sram_read_byte((uint8_t*)&byte);
 						printf("hard coded disk count = %d\n",byte);
-						flash_read_stop();
+						sram_read_end();
 						return(pos);
 					}
 				}
 			}
 		}
 	}
-	flash_read_stop();
+	sram_read_end();
 	return(-1);
 }
 
@@ -74,7 +75,7 @@ void create_disklist(void)
 
 	memset((uint8_t*)disklist,0,8192 + 2);
 
-	for(i=1;i<blocks;i++) {
+	for(i=0;i<blocks && num < 255;i++) {
 		
 		//read disk header information
 		flash_read_disk_header(i,&header);

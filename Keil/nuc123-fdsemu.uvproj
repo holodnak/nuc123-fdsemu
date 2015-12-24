@@ -494,6 +494,16 @@
               <FileType>1</FileType>
               <FilePath>..\disklist.c</FilePath>
             </File>
+            <File>
+              <FileName>loader_lz4.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\loader_lz4.c</FilePath>
+            </File>
+            <File>
+              <FileName>loader.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\loader.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

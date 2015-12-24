@@ -116,4 +116,9 @@ void fds_remove_disk(void);
 int fds_diskwrite_fillbuf(uint8_t *buf, int len);
 int fds_diskwrite(void);
 
+void fds_start_diskwrite(void);
+void fds_start_diskread(void);
+void fds_stop_diskwrite(void);
+void fds_stop_diskread(void);
+
 #endif

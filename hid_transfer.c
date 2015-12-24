@@ -15,6 +15,7 @@
 #include "spiutil.h"
 #include "fds.h"
 #include "sram.h"
+#include "main.h"
 #include "config.h"
 
 uint8_t volatile g_u8EP2Ready = 0;
@@ -314,8 +315,7 @@ uint32_t addr;
 void update_firmware(void)
 {
 	int i;
-	uint32_t addr, data;
-	uint32_t chksum = 0;
+	uint32_t data, chksum = 0;
 
 	SYS_UnlockReg();
 
@@ -354,11 +354,29 @@ void update_firmware(void)
     while(1);
 }
 
+void selftest(void)
+{
+	int n;
+
+	LED_GREEN(0);
+	LED_RED(0);
+	printf("self test...\n");
+	for(n=0;n<3;n++) {
+		LED_GREEN(1);
+		LED_RED(0);
+		TIMER_Delay(TIMER2,100 * 1000);
+		LED_GREEN(0);
+		LED_RED(1);
+		TIMER_Delay(TIMER2,50 * 1000);
+	}
+	LED_GREEN(1);
+	LED_RED(0);
+}
+
 void process_send_feature(uint8_t *usbdata,int len)
 {
 	uint8_t *buf = epdata;
 	uint8_t reportid;
-	int i;
 	static int bytes;
 
     USBD_MemCopy((uint8_t *)buf, usbdata, len);
@@ -416,6 +434,7 @@ void process_send_feature(uint8_t *usbdata,int len)
 
 	//begin reading the disk
 	else if(reportid == ID_DISK_READ_START) {
+//		printf("process_send_feature: ID_DISK_READ_START\n");
 //		fds_setup_diskread();
 
 		//TODO: the above and below lines of code do not work well together when being called back-to-back
@@ -424,7 +443,6 @@ void process_send_feature(uint8_t *usbdata,int len)
 		fds_start_diskread();
 		sequence = 1;
 //		startread = 1;
-//		printf("process_send_feature: ID_DISK_READ_START\n");
 	}
 
 	else if(reportid == ID_DISK_WRITE_START) {
@@ -455,6 +473,10 @@ void process_send_feature(uint8_t *usbdata,int len)
 		}
 	}
 
+	else if(reportid == ID_SELFTEST) {
+		selftest();
+	}
+
 	else {
 		printf("process_send_feature: unknown reportid $%X\n",reportid);
 	}
@@ -478,13 +500,6 @@ int get_feature_report(uint8_t reportid, uint8_t *buf)
 	}
 
 	else if(reportid == ID_DISK_READ) {
-/*		len = 255;
-		buf[0] = sequence++;
-		if(fds_diskread_getdata(buf + 1,254) == 0) {
-			fds_stop_diskread();
-			len = 1;
-		}
-*/
 		buf[0] = sequence++;
 		len = fds_diskread_getdata(buf + 1,254) + 1;
 		if(len < 255) {

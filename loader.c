@@ -1,243 +1,129 @@
 #include <stdio.h>
 #include "NUC123.h"
-#include "fds.h"
-#include "fdsutil.h"
-#include "flash.h"
+//#include "fds.h"
+//#include "fdsutil.h"
+#include "sram.h"
+#include "disklist.h"
 
 /*
-//string to find to start sending the fake disklist
-uint8_t diskliststr[17] = {0x80,0x03,0x07,0x10,'D','I','S','K','L','I','S','T',0x00,0x80,0x00,0x10,0x00};
+	decompress lz4 data.
 
-int find_disklist()
-{
-	int pos = 0;
-	int count = 0;
-	uint8_t byte;
-
-	flash_read_start(0 + 256);
-	for(pos=0;pos<65500;) {
-
-		//read a byte from the flash
-		flash_read((uint8_t*)&byte,1);
-		pos++;
-		
-		//first byte matches
-		if(byte == diskliststr[0]) {
-			count = 1;
-			do {
-				flash_read((uint8_t*)&byte,1);
-				pos++;
-			} while(byte == diskliststr[count++]);
-			if(count == 18) {
-				printf("found disklist block header at %d (count = %d)\n",pos - count,count);
-
-				//skip over the crc
-				flash_read((uint8_t*)&byte,1);
-				flash_read((uint8_t*)&byte,1);
-				pos += 2;
-
-				//skip the gap
-				do {
-					flash_read((uint8_t*)&byte,1);
-					pos++;
-				} while(byte == 0 && pos < 65500);
-
-				//make sure this is a blocktype of 4
-				if(byte == 0x80) {
-					flash_read((uint8_t*)&byte,1);
-					pos++;
-					if(byte == 4) {
-						flash_read((uint8_t*)&byte,1);
-						printf("hard coded disk count = %d\n",byte);
-						flash_read_stop();
-						return(pos);
-					}
-				}
-			}
-		}
-	}
-	flash_read_stop();
-	return(-1);
-}
-
-uint8_t *disklistblock = decodebuf + 4096;
-uint8_t *disklist = decodebuf + 4096 + 1;
-
-void create_disklist(void)
-{
-	uint8_t *list = disklist + 32;
-	flash_header_t header;
-	int blocks = flash_get_total_blocks();
-	int i,num = 0;
-	uint32_t crc;
-
-	memset(disklist,0,4096 + 2);
-
-	for(i=0;i<blocks;i++) {
-		
-		//read disk header information
-		flash_read_disk_header(i,&header);
-		
-		//empty block
-		if((uint8_t)header.name[0] == 0xFF) {
-			continue;
-		}
-
-		//continuation of disk sides
-		if(header.name[0] == 0x00) {
-			continue;
-		}
-
-		list[0] = (uint8_t)i;
-		memcpy(list + 1,header.name,26);
-		list[31] = 0;
-		printf("block %X: id = %02d, '%s'\r\n",i,header.id,header.name);
-		list += 32;
-		num++;
-	}
-	disklistblock[0] = 4;
-	disklist[0] = num;
-
-	//correct
-	crc = calc_crc(disklistblock,4096 + 1 + 2);
-	disklist[4096] = (uint8_t)(crc >> 0);
-	disklist[4097] = (uint8_t)(crc >> 8);
-}
-
-static void begin_transfer_loader(void)
-{
-	int i, j;
-	int decodelen = 0;
-	int leadin = DEFAULT_LEAD_IN;
-	static int disklistpos = -1;
-
-	printf("beginning loader transfer...\r\n");
-
-	if(disklistpos == -1) {
-		disklistpos = find_disklist();
-		printf("find_disklist() = %d\n",disklistpos);
-		create_disklist();
-	}
-
-	flash_read_start(diskblock * 0x10000);
-	needbyte = 0;
-	count = 7;
-	havewrite = 0;
-	writelen = 0;
-	
-	write_num = 0;
-	
-	for(i=0;i<1024;i++) {
-		decodebuf[i] = 0;
-	}
-
-    NVIC_DisableIRQ(USBD_IRQn);
-    NVIC_DisableIRQ(GPAB_IRQn);
-    NVIC_EnableIRQ(EINT0_IRQn);
-    NVIC_EnableIRQ(TMR1_IRQn);	
-	TIMER_Start(TIMER0);
-	TIMER_Start(TIMER1);
-
-	bytes = 0;
-	needbyte = 0;
-	count = 7;
-	havewrite = 0;
-	writelen = 0;
-
-	//transfer lead-in
-	while(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
-		if(needbyte) {
-			needbyte = 0;
-			data2 = 0;
-			leadin -= 8;
-			if(leadin <= 0) {
-				flash_read((uint8_t*)&data2,1);
-				bytes++;
-				break;
-			}
-		}
-	}
-
-	//transfer disk data
-	while(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
-		if(IS_WRITE()) {
-			int len = 0;
-
-			writes[write_num].diskpos = bytes + 2;
-			TIMER0->TCSR = TIMER_TCSR_CRST_Msk;
-			TIMER0->TCMPR = 0xFFFFFF;
-			TIMER0->TCSR = TIMER_CONTINUOUS_MODE | 7 | TIMER_TCSR_TDR_EN_Msk | TIMER_TCSR_CEN_Msk;
-			decode(0,0,0);
-			while(IS_WRITE()) {
-				if(havewrite) {
-					havewrite = 0;
-					decode(decodebuf + decodelen,raw_to_raw03_byte(writelen),&len);
-				}
-				if(needbyte) {
-					needbyte = 0;
-					flash_read((uint8_t*)&data2,1);
-					bytes++;
-					if(bytes >= 0xFF00) {
-						printf("reached end of data block, something went wrong...\r\n");
-						break;
-					}
-				}
-			}
-			TIMER0->TCSR = TIMER_TCSR_CRST_Msk;
-			len = (len / 8) + 2;
-			writes[write_num].decstart = decodelen;
-			writes[write_num].decend = decodelen + len;
-			printf("finished write %d, start = %d, end = %d (len = %d)\r\n",write_num,decodelen,decodelen + len,len);
-			decodelen += len;
-			write_num++;
-		}
-		if(needbyte) {
-			needbyte = 0;
-			flash_read((uint8_t*)&data2,1);
-			if(bytes >= disklistpos) {
-				int n = bytes - disklistpos;
-				if(n < (4096 + 2)) {
-					data2 = disklist[n];
-				}
-				else {
-					data2 = 0;
-				}
-			}
-			bytes++;
-			if(bytes >= 0xFF00) {
-				printf("reached end of data block, something went wrong...\r\n");
-				break;
-			}
-		}
-	}
-    NVIC_DisableIRQ(EINT0_IRQn);
-    NVIC_DisableIRQ(TMR1_IRQn);
-	TIMER_Stop(TIMER0);
-	TIMER_Stop(TIMER1);
-    NVIC_EnableIRQ(USBD_IRQn);
-
-	flash_read_stop();
-	
-	//loader
-	if(write_num) {
-		uint8_t *ptr = &decodebuf[1024];
-		int in,out;
-		
-		//ptr should look like this: $80 $02 $dd
-		//where $dd is the new diskblock
-//		hexdump("decodebuf",decodebuf,256);
-		bin_to_raw03(decodebuf,sectorbuf,writes[0].decend,4096);
-		in = 0;
-		out = 0;
-		block_decode(&decodebuf[1024],sectorbuf,&in,&out,4096,1024,2,2);
-		
-//		hexdump("&decodebuf[1024]",&decodebuf[1024],256);
-
-		printf("loader exiting, new diskblock = %d\n",ptr[1]);
-		fds_insert_disk(ptr[1]);
-		return;
-	}
-
-	printf("transferred %d bytes\r\n",bytes);
-}
+	buf = raw lz4 data, including 16 byte header
+	cb_read = callback for reading uncompressed data
+	cb_write = callback for writing uncompressed data
 */
+int decompress_lz4(uint8_t *buf, int len, uint8_t(*cb_read)(uint32_t), void(*cb_write)(uint32_t,uint8_t))
+{
+	uint8_t *ptr = buf;
+	uint8_t token, tmp;
+	int inlen = 0;
+	int outlen = 0;
+	uint16_t offset;
+	uint32_t n;
+
+//	printf("compressed size = %d, uncompressed size = %d\n", ptr32[1], ptr32[3]);
+//	printf("magic number = $%08X\n", ptr32[0]);
+	inlen += 4;
+	inlen += 7;
+
+	//loop thru
+	while (inlen < len) {
+//		printf("inlen, outlen = %d, %d (len = %d)\n", inlen, outlen, len);
+		token = ptr[inlen++];
+
+		//literal part
+		if ((token >> 4) & 0xF) {
+
+			//calculate literal length
+			n = (token >> 4) & 0xF;
+
+			//length of 15 or greater
+			if (n == 0xF) {
+				do {
+					tmp = ptr[inlen++];
+					n += tmp;
+				} while (tmp == 0xFF);
+			}
+//			printf("literal length = %d\n", n);
+
+			//write literals to output
+			while (n--) {
+//				printf("%c", ptr[inlen]);
+				cb_write(outlen++, ptr[inlen++]);
+			}
+//			printf("\n");
+
+		}
+
+		//match part (if it is there)
+		if ((inlen + 12) >= len) {
+			break;
+		}
+
+		//get match offset
+		offset = ptr[inlen++];
+		offset |= ptr[inlen++] << 8;
+
+		//calculate match length
+		n = token & 0xF;
+
+		//length of 15 or greater
+		if (n == 0xF) {
+			do {
+				tmp = ptr[inlen++];
+				n += tmp;
+			} while (tmp == 0xFF);
+		}
+
+		//add 4 to match length
+		n += 4;
+//		printf("match length = %d, offset = %d\n", n, offset);
+		offset = outlen - offset;
+
+		//copy match bytes
+		while (n--) {
+			tmp = cb_read(offset++);
+			cb_write(outlen++, tmp);
+		}
+	}
+
+	return(outlen);
+}
+
+uint8_t lz4_read(uint32_t addr)
+{
+	uint8_t ret;
+
+	sram_read(addr,&ret,1);
+	return(ret);
+}
+
+void lz4_write(uint32_t addr, uint8_t data)
+{
+	sram_write(addr,&data,1);
+}
+
+extern char loader_lz4[];
+extern int loader_lz4_length;
+
+#define DISKLISTSIZE (8192 + 3)
+
+uint8_t disklistbuf[DISKLISTSIZE];
+uint8_t *disklistblock = disklistbuf;
+uint8_t *disklist = disklistbuf + 1;
+//int disklistpos = -1;
+
+void loader_copy(void)
+{
+	int ret;
+
+	printf("decompressing loader to sram...\r\n");
+	ret = decompress_lz4((uint8_t*)loader_lz4,loader_lz4_length,lz4_read,lz4_write);
+	printf("decompressed loader to %d bytes\n",ret);
+
+	ret = find_disklist();
+	printf("find_disklist() = %d\n",ret);
+	create_disklist();
+
+	sram_write(ret,(uint8_t*)disklist,DISKLISTSIZE + 2);
+}
