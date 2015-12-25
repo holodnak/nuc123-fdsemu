@@ -97,6 +97,7 @@ void create_disklist(void)
 		list += 32;
 		num++;
 	}
+
 	disklistblock[0] = 4;
 	disklist[0] = num;
 	printf("number of disks found = %d\n",num);

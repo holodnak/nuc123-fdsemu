@@ -94,12 +94,6 @@ void SYS_Init(void)
     SYS->GPC_MFP |= SYS_GPC_MFP_PC8_SPI1_SS0 | SYS_GPC_MFP_PC9_SPI1_CLK | SYS_GPC_MFP_PC10_SPI1_MISO0 | SYS_GPC_MFP_PC11_SPI1_MOSI0;
     SYS->ALT_MFP |= SYS_ALT_MFP_PC8_SPI1_SS0 | SYS_ALT_MFP_PC9_SPI1_CLK | SYS_ALT_MFP_PC10_SPI1_MISO0 | SYS_ALT_MFP_PC11_SPI1_MOSI0;
 
-	//enable Port F GPIO
-    SYS->GPF_MFP = 0;
-
-	//int0
-//    SYS->GPB_MFP |= SYS_GPB_MFP_PB14_INT0;
-
     /* Update System Core Clock */
     /* User can use SystemCoreClockUpdate() to calculate SystemCoreClock and cyclesPerUs automatically. */
     SystemCoreClockUpdate();
@@ -321,8 +315,6 @@ printf("PB10 %08X - %08X %08X - %08X %08X\n",&PB10,(uint32_t)PB,BIT10,MAKE_PORT(
 
 int main()
 {
-	//pc12 = green
-	//pc13 = red
 	CLEAR_WRITE();
 	SET_STOPMOTOR();
 	CLEAR_SCANMEDIA();
