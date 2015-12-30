@@ -354,6 +354,8 @@ void update_firmware(void)
     while(1);
 }
 
+uint8_t selftest_result = 0xFF;
+
 void selftest(void)
 {
 	int n;
@@ -361,6 +363,10 @@ void selftest(void)
 	LED_GREEN(0);
 	LED_RED(0);
 	printf("self test...\n");
+	selftest_result = 0;
+	if(sram_test() != 0) {
+		selftest_result |= 0x10;
+	}
 	for(n=0;n<3;n++) {
 		LED_GREEN(1);
 		LED_RED(0);
@@ -369,8 +375,14 @@ void selftest(void)
 		LED_RED(1);
 		TIMER_Delay(TIMER2,50 * 1000);
 	}
-	LED_GREEN(1);
-	LED_RED(0);
+	if(selftest_result) {
+		LED_GREEN(0);
+		LED_RED(1);
+	}
+	else {
+		LED_GREEN(1);
+		LED_RED(0);
+	}
 }
 
 void process_send_feature(uint8_t *usbdata,int len)
@@ -505,6 +517,11 @@ int get_feature_report(uint8_t reportid, uint8_t *buf)
 		if(len < 255) {
 			fds_stop_diskread();
 		}
+	}
+
+	else if(reportid == ID_SELFTEST) {
+		buf[0] = selftest_result;
+		len = 1;
 	}
 
 	else {

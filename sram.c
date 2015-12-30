@@ -37,7 +37,7 @@ static int test_page(int page, int maxerr)
 	return(errors);
 }
 
-void sram_test(int ss)
+int sram_test()
 {
 	int maxerr = 3;
 	int i, error;
@@ -50,14 +50,15 @@ void sram_test(int ss)
 		error += test_page(i, maxerr);
 		if(error >= maxerr) {
 			printf("too many errors, stopping test.\r\n");
-			return;
+			return(error);
 		}
 	}
 	if(error) {
 		printf("sram test failed, %d errors.\r\n",error);
-		return;
+		return(error);
 	}
 	printf("sram test passed.\r\n");
+	return(0);
 }
 
 uint8_t sram_read_status()
@@ -83,19 +84,19 @@ void sram_write_status(uint8_t status)
 	spi_deselect_device(SPI_SRAM, 0);
 }
 
-void sram_init_device(int ss)
+void sram_init_device()
 {
 	//ensure it is in sequencial mode
 	sram_write_status(0x40);
 
 	//read back mode register
-	printf("sram%d mode register: $%02X\n",ss,sram_read_status());
+	printf("sram mode register: $%02X\n",sram_read_status());
 }
 
 void sram_init(void)
 {
-	sram_init_device(0);
-	sram_test(0);
+	sram_init_device();
+	sram_test();
 }
 
 void sram_read(int addr,uint8_t *buf,int len)
