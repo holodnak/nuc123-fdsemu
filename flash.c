@@ -73,8 +73,6 @@ void flash_get_id(uint8_t *buf)
 //initialize flash chip stuff
 void flash_init(void)
 {
-	uint8_t data[4];
-
 	//get flash chip info
 	chip = flash_find_chip();
 	if(chip == 0) {

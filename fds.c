@@ -8,7 +8,6 @@
 #include "fifo.h"
 #include "main.h"
 #include "sram.h"
-#include "disklist.h"
 
 /*
 PIN 43 = -write
@@ -346,8 +345,6 @@ static void begin_transfer_loader(void)
 
 	printf("beginning loader transfer...\r\n");
 
-//	sram_write(disklistpos,(uint8_t*)disklist,DISKLISTSIZE + 2);
-
 	setup_transfer();
 	
 	//transfer disk data
@@ -463,7 +460,7 @@ int mode = MODE_TRANSFER;
 void fds_setup_transfer(void)
 {
     /* Unlock protected registers */
-    SYS_UnlockReg();
+//    SYS_UnlockReg();
 
 #ifdef PROTOTYPE
 	//setup gpio pins for the fds
@@ -501,7 +498,7 @@ void fds_setup_transfer(void)
 	GPIO_ENABLE_DEBOUNCE(PB, BIT7);
 
 #endif
-	SYS_LockReg();
+//	SYS_LockReg();
 
 	mode = MODE_TRANSFER;
 	printf("entering ram adaptor transfer mode\n");
@@ -511,7 +508,7 @@ void fds_setup_transfer(void)
 void fds_setup_diskread(void)
 {
     /* Unlock protected registers */
-    SYS_UnlockReg();
+//    SYS_UnlockReg();
 
 #ifdef PROTOTYPE
 	GPIO_DISABLE_DEBOUNCE(PD, BIT4);
@@ -550,7 +547,7 @@ void fds_setup_diskread(void)
 
 #endif
 
-	SYS_LockReg();
+//	SYS_LockReg();
 
 	mode = MODE_DISKREAD;
 	printf("entering disk read mode\n");
@@ -581,11 +578,11 @@ int find_first_disk_side(int block)
 	return(block);
 }
 
-int mediaset = 0;
-int ready = 0;
-
 void fds_tick(void)
 {
+	static int mediaset = 0;
+	static int ready = 0;
+
 	if(mode == MODE_DISKREAD) {
 		if(IS_MEDIASET() && mediaset == 0) {
 			mediaset = 1;

@@ -475,11 +475,6 @@
               <FilePath>..\diskrw.c</FilePath>
             </File>
             <File>
-              <FileName>flashutil.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\flashutil.c</FilePath>
-            </File>
-            <File>
               <FileName>fifo.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\fifo.c</FilePath>
@@ -488,11 +483,6 @@
               <FileName>transfer.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\transfer.c</FilePath>
-            </File>
-            <File>
-              <FileName>disklist.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\disklist.c</FilePath>
             </File>
             <File>
               <FileName>loader_lz4.c</FileName>

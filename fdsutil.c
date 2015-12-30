@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 #include "NUC123.h"
 #include "fdsutil.h"
 

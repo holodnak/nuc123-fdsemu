@@ -181,6 +181,51 @@ void hexdump(char *desc, void *addr, int len)
 	printf("  %s\r\n", buff);
 }
 
+void hexdump2(char *desc, uint8_t (*readfunc)(uint32_t), int pos, int len)
+{
+	int i;
+	unsigned char buff[17];
+//	unsigned char *pc = (unsigned char *)addr;
+	unsigned char data;
+
+	// Output description if given.
+	if (desc != NULL)
+	printf("%s:\r\n", desc);
+
+	// Process every byte in the data.
+	for (i = 0; i < len; i++) {
+		// Multiple of 16 means new line (with line offset).
+
+		if ((i % 16) == 0) {
+			// Just don't print ASCII for the zeroth line.
+			if (i != 0)
+			printf("  %s\r\n", buff);
+
+			// Output the offset.
+			printf("  %04x ", i);
+		}
+		// Now the hex code for the specific character.
+		data = readfunc(pos + i);
+		printf(" %02x", data);
+
+		// And store a printable ASCII character for later.
+		if ((data < 0x20) || (data > 0x7e))
+		buff[i % 16] = '.';
+		else
+		buff[i % 16] = data;
+		buff[(i % 16) + 1] = '\0';
+	}
+
+	// Pad out last line if not exactly 16 characters.
+	while ((i % 16) != 0) {
+		printf("   ");
+		i++;
+	}
+
+	// And print the final ASCII bit.
+	printf("  %s\r\n", buff);
+}
+
 int read_char(int *ch)
 {
 	if((DEBUG_PORT->FSR & UART_FSR_RX_EMPTY_Msk) == 0 ) {
