@@ -283,36 +283,6 @@ void console_tick(void)
 	}
 }
 
-void debugz(void)
-{
-
-#define GPIO_PIN_DATA2(port, pin)    ((GPIO_PIN_DATA_BASE+(0x40*(port))) + ((pin)<<2))
-#define iPA1            GPIO_PIN_DATA2(0, 1) /*!< Specify PA.10 Pin Data Input/Output */
-#define iPA10            GPIO_PIN_DATA2(0, 10) /*!< Specify PA.10 Pin Data Input/Output */
-#define iPA11            GPIO_PIN_DATA2(0, 11) /*!< Specify PA.11 Pin Data Input/Output */
-#define iPA12            GPIO_PIN_DATA2(0, 12) /*!< Specify PA.12 Pin Data Input/Output */
-#define iPA13            GPIO_PIN_DATA2(0, 13) /*!< Specify PA.13 Pin Data Input/Output */
-#define iPA14            GPIO_PIN_DATA2(0, 14) /*!< Specify PA.14 Pin Data Input/Output */
-#define iPA15            GPIO_PIN_DATA2(0, 15) /*!< Specify PA.15 Pin Data Input/Output */
-#define iPB0             GPIO_PIN_DATA2(1, 0 ) /*!< Specify PB.0 Pin Data Input/Output */
-#define iPB1             GPIO_PIN_DATA2(1, 1 ) /*!< Specify PB.1 Pin Data Input/Output */
-#define iPB2             GPIO_PIN_DATA2(1, 2 ) /*!< Specify PB.2 Pin Data Input/Output */
-#define iPB10            GPIO_PIN_DATA2(1, 10) /*!< Specify PB.10 Pin Data Input/Output */
-#define iPB11            GPIO_PIN_DATA2(1, 11) /*!< Specify PB.10 Pin Data Input/Output */
-	
-printf("PA1 - %08X - %08X %08X\n",iPA1,(uint32_t)PA,BIT1);
-printf("PA10 - %08X - %08X %08X\n",iPA10,(uint32_t)PA,BIT10);
-printf("PA11 - %08X - %08X %08X\n",iPA11,(uint32_t)PA,BIT11);
-printf("PA12 - %08X - %08X %08X\n",iPA12,(uint32_t)PA,BIT12);
-printf("PB10 - %08X - %08X %08X\n",iPB10,(uint32_t)PB,BIT10);
-printf("PB11 - %08X - %08X %08X\n",iPB11,(uint32_t)PB,BIT11);
-
-#define MAKE_PORT(nn)	(((((uint32_t)&(nn)) - (uint32_t)GPIO_PIN_DATA_BASE) & 0x1C0) + GPIO_BASE)
-#define MAKE_PIN(nn)	(1 << (((((uint32_t)&(nn)) - (uint32_t)GPIO_PIN_DATA_BASE) & 0x3F) / 4))
-
-printf("PB10 %08X - %08X %08X - %08X %08X\n",&PB10,(uint32_t)PB,BIT10,MAKE_PORT(PB10),MAKE_PIN(PB10));
-}
-
 int main()
 {
 	CLEAR_WRITE();
@@ -354,8 +324,6 @@ int main()
 
     /* Enable USB device interrupt */
     NVIC_EnableIRQ(USBD_IRQn);
-
-//	debugz();
 
 	LED_GREEN(1);
 	LED_RED(0);

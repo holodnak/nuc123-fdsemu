@@ -9,23 +9,6 @@ void spi_init(void)
 
 int spi_fifo_read_packet(SPI_T *spi, uint8_t *data, int len)
 {
-/*	int timeout = SPI_TIMEOUT;
-
-	SPI_WRITE_TX0(spi,0);
-	while(len) {
-		if(SPI_GET_RX_FIFO_EMPTY_FLAG(SPI0) == 0) {
-			timeout = SPI_TIMEOUT;
-			*data = SPI_READ_RX0(spi);
-			SPI_WRITE_TX0(spi,0);
-			printf("spi_fifo_read_packet: data = $%02X, len = %d\n",*data,len);
-			data++;
-			len--;
-		}
-		if(!timeout--) {
-			printf("spi_fifo_read_packet timeout (len = %d)\n", len);
-			return(-1);
-		}
-	}*/
     uint32_t u32RxCounter, u32TxCounter;
 
     /* /CS: active */
@@ -56,25 +39,9 @@ int spi_fifo_read_packet(SPI_T *spi, uint8_t *data, int len)
 
 int spi_fifo_write_packet(SPI_T *spi, uint8_t *data, int len)
 {
-/*	int timeout = SPI_TIMEOUT;
-
-	while(len) {
-		//check if the fifo buffer has room for another byte
-		if(SPI_GET_TX_FIFO_FULL_FLAG(spi) == 0) {
-			printf("spi_fifo_write_packet: data = $%02X, len = %d\n",*data,len);
-			timeout = SPI_TIMEOUT;
-			SPI_WRITE_TX0(spi, *data);
-			data++;
-			len--;
-		}
-		if(!timeout--) {
-			printf("spi_fifo_write_packet timeout (len = %d)\n",len);
-			return(-1);
-		}
-	}*/
-    /* /CS: active */
     uint32_t u32Counter;
 
+    /* /CS: active */
 //    SPI_SET_SS0_LOW(spi);
 
     u32Counter = 0;
