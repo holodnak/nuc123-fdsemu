@@ -6,6 +6,9 @@
 #include "sram.h"
 #include "flash.h"
 
+//size of entire disk list data struct array
+#define DISKLISTSIZE (32 * 256)		//size of entry * number of slots
+
 /*
 	decompress lz4 data.
 
@@ -13,7 +16,7 @@
 	cb_read = callback for reading uncompressed data
 	cb_write = callback for writing uncompressed data
 */
-int decompress_lz4(uint8_t *buf, int len, uint8_t(*cb_read)(uint32_t), void(*cb_write)(uint32_t,uint8_t))
+static int decompress_lz4(uint8_t *buf, int len, uint8_t(*cb_read)(uint32_t), void(*cb_write)(uint32_t,uint8_t))
 {
 	uint8_t *ptr = buf;
 	uint8_t token, tmp;
@@ -22,14 +25,11 @@ int decompress_lz4(uint8_t *buf, int len, uint8_t(*cb_read)(uint32_t), void(*cb_
 	uint16_t offset;
 	uint32_t n;
 
-//	printf("compressed size = %d, uncompressed size = %d\n", ptr32[1], ptr32[3]);
-//	printf("magic number = $%08X\n", ptr32[0]);
 	inlen += 4;
 	inlen += 7;
 
 	//loop thru
 	while (inlen < len) {
-//		printf("inlen, outlen = %d, %d (len = %d)\n", inlen, outlen, len);
 		token = ptr[inlen++];
 
 		//literal part
@@ -45,15 +45,11 @@ int decompress_lz4(uint8_t *buf, int len, uint8_t(*cb_read)(uint32_t), void(*cb_
 					n += tmp;
 				} while (tmp == 0xFF);
 			}
-//			printf("literal length = %d\n", n);
 
 			//write literals to output
 			while (n--) {
-//				printf("%c", ptr[inlen]);
 				cb_write(outlen++, ptr[inlen++]);
 			}
-//			printf("\n");
-
 		}
 
 		//match part (if it is there)
@@ -78,7 +74,6 @@ int decompress_lz4(uint8_t *buf, int len, uint8_t(*cb_read)(uint32_t), void(*cb_
 
 		//add 4 to match length
 		n += 4;
-//		printf("match length = %d, offset = %d\n", n, offset);
 		offset = outlen - offset;
 
 		//copy match bytes
@@ -91,7 +86,7 @@ int decompress_lz4(uint8_t *buf, int len, uint8_t(*cb_read)(uint32_t), void(*cb_
 	return(outlen);
 }
 
-uint8_t lz4_read(uint32_t addr)
+static uint8_t lz4_read(uint32_t addr)
 {
 	uint8_t ret;
 
@@ -99,12 +94,10 @@ uint8_t lz4_read(uint32_t addr)
 	return(ret);
 }
 
-void lz4_write(uint32_t addr, uint8_t data)
+static void lz4_write(uint32_t addr, uint8_t data)
 {
 	sram_write(addr,&data,1);
 }
-
-#define DISKLISTSIZE 8192
 
 //string to find to start sending the fake disklist
 const uint8_t diskliststr[17] = {0x80,0x03,0x07,0x10,'D','I','S','K','L','I','S','T',0x00,0x80,0x00,0x20,0x00};
@@ -196,6 +189,7 @@ void insert_disklist(int blockstart)
 	pos += 32;
 
 	//gather up all disk game names
+	//TODO: fix loader to allow more than 256 entries
 	for(num=0, i=0;i<blocks && num < 255;i++) {
 		
 		//read disk header information

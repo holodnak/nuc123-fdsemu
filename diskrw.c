@@ -72,6 +72,7 @@ int ra;
 //setup for writing a disk
 void fds_start_diskwrite(void)
 {
+	dataout = 0xAAAA;
 	dataout2 = 0xAAAA;
 	needbyte = 0;
 	count = 0;
@@ -120,18 +121,20 @@ int fds_diskwrite(void)
 			needbyte = 0;
 			if(bytes < 0x10000) {
 				sram_read_byte(&byte);
-				bytes++;
 			}
 			else {
 				byte = 0;
 			}
+			bytes++;
 			dataout2 = expand[byte & 0x0F];
 			dataout2 |= expand[(byte & 0xF0) >> 4] << 8;
 		}
 	}
+	
+	CLEAR_WRITE();
 
 	sram_read_end();
-	printf("disk write finished.\n");
+	printf("disk write finished, wrote %d bytes.\n", bytes);
 	return(0);
 }
 
@@ -184,47 +187,6 @@ static int get_buf_size()
 	}
 	return(ret);
 }
-/*
-int fds_diskread_getdata(uint8_t *bufbuf, int len)
-{
-	int t,v,w;
-
-	if(bytes == 0) {
-		if(IS_READY() == 0) {
-			printf("waiting drive to be ready\n");
-			while(IS_READY() == 0 && IS_MOTORON());
-		}
-	}
-	
-	while(IS_READY() && IS_MOTORON() && (get_buf_size() < len)) {
-//		printf("waiting for data\n");
-	}
-
-	bytes += len;
-	t = sentbufpos + len;
-	memset(bufbuf,0x50,len);
-
-	//if this read will loop around to the beginning of the buffer, handle it
-	if(t >= 4096) {
-		v = 4096 - sentbufpos;
-		w = len - v;
-		memcpy(bufbuf,(uint8_t*)diskbuffer + sentbufpos,v);
-		memcpy(bufbuf + v,(uint8_t*)diskbuffer,w);
-		sentbufpos = w;
-	}
-	
-	//this read will be one unbroken chunk of the buffer
-	else {
-		memcpy(bufbuf,(uint8_t*)diskbuffer + sentbufpos,len);
-		sentbufpos += len;
-	}
-	
-	if(IS_READY() == 0) {
-		return(0);
-	}
-	return(1);
-}
-*/
 
 int fds_diskread_getdata(uint8_t *bufbuf, int len)
 {

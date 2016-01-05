@@ -19,6 +19,9 @@ const flashchip_t flashchips[] = {
 	{0xEF, 0x40, 0x17, 0x800000}, 	//8mbyte
 	{0xEF, 0x40, 0x18, 0x1000000}, 	//16mbyte
 
+	//micron
+	{0x20, 0xBA, 0x19, 0x2000000}, 	//32mbyte
+
 	//other flash chips
 	{0x01, 0x40, 0x17, 0x800000}, 	//8mbyte
 
@@ -110,9 +113,36 @@ void flash_reset(void)
 	spi_deselect_device(SPI_FLASH, 0);
 }
 
+void flash_check_extaddr(uint32_t addr)
+{
+	uint8_t data[4];
+	uint8_t tmp = (uint8_t)(addr >> 24);
+
+	//if chip is smaller then skip this
+	if(chip->size < 0x2000000) {
+		return;
+	}
+
+	//enable writes
+	data[0] = 0x06;
+	spi_select_device(SPI_FLASH, 0);
+	spi_write_packet(SPI_FLASH, data, 1);
+	spi_deselect_device(SPI_FLASH, 0);
+
+	//write extended address
+	data[0] = 0xC5;
+	data[1] = tmp;
+	spi_select_device(SPI_FLASH, 0);
+	spi_write_packet(SPI_FLASH, data, 2);
+	spi_deselect_device(SPI_FLASH, 0);
+}
+
 void flash_read_start(uint32_t addr)
 {
 	uint8_t data[4];
+
+	//write extended address register
+	flash_check_extaddr(addr);
 
 	//read data
 	data[0] = 0x03;
@@ -121,7 +151,6 @@ void flash_read_start(uint32_t addr)
 	data[3] = (uint8_t)(addr);
 	spi_select_device(SPI_FLASH, 0);
 	spi_write_packet(SPI_FLASH, data, 4);
-//	printf("flash_read_start: addr = $%08X\n",addr);
 }
 
 void flash_read_stop(void)
@@ -137,6 +166,9 @@ void flash_read(uint8_t *buf,int len)
 void flash_read_data(uint32_t addr,uint8_t *buf,int len)
 {
 	uint8_t data[4];
+
+	//write extended address register
+	flash_check_extaddr(addr);
 
 	//read data
 	data[0] = 0x03;
@@ -158,10 +190,13 @@ void flash_read_page(int page,uint8_t *buf)
 {
 	uint8_t data[4];
 
+	//write extended address register
+	flash_check_extaddr(page << 8);
+
 	//read the data
 	data[0] = 0x03;
 	data[1] = page >> 8;
-	data[2] = (page << 0);
+	data[2] = page;
 	data[3] = 0x00;
 	spi_select_device(SPI_FLASH, 0);
 	spi_write_packet(SPI_FLASH, data, 4);
@@ -173,6 +208,9 @@ void flash_read_page(int page,uint8_t *buf)
 void flash_write_page(int page,uint8_t *buf)
 {
 	uint8_t data[4];
+
+	//write extended address register
+	flash_check_extaddr(page << 8);
 
 	//enable writes
 	data[0] = 0x06;
@@ -223,6 +261,9 @@ void flash_erase_block(int block)
 {
 	uint8_t data[4];
 
+	//write extended address register
+	flash_check_extaddr(block << 16);
+
 	//enable writes
 	data[0] = 0x06;
 	spi_select_device(SPI_FLASH, 0);
@@ -245,6 +286,9 @@ void flash_erase_block(int block)
 void flash_erase_sector(int block,int sector)
 {
 	uint8_t data[4];
+
+	//write extended address register
+	flash_check_extaddr(block << 16);
 
 	//enable writes
 	data[0] = 0x06;
