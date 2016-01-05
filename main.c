@@ -8,16 +8,6 @@
  * Copyright (C) 2014~2015 Nuvoton Technology Corp. All rights reserved.
 *****************************************************************************/
 
-/*
-TODO:
-
- - when device is first plugged in, and it is connected to a disk drive, it takes a
- small amount of time to get the pins ready so the drive has a little activity.
-   --solution: move the fds pin init code closer to the beginning of execution.
-   
- - clean up code
-*/
-
 #include <stdio.h>
 #include "NUC123.h"
 #include "spiutil.h"
@@ -34,6 +24,17 @@ TODO:
 
 const uint32_t version = VERSION;
 const uint32_t buildnum = BUILDNUM;
+uint32_t boardver = 1;
+
+struct ident_s {
+	char ident[40];
+	uint16_t build;
+};
+
+const struct ident_s ident = {
+	"NUC123-FDSemu Firmware by James Holodnak",
+	BUILDNUM
+};
 
 void SYS_Init(void)
 {
@@ -70,7 +71,7 @@ void SYS_Init(void)
     CLK_SetModuleClock(SPI1_MODULE, CLK_CLKSEL1_SPI1_S_HCLK, MODULE_NoMsk);
     CLK_SetModuleClock(TMR0_MODULE, CLK_CLKSEL1_TMR0_S_HCLK, 0);
     CLK_SetModuleClock(TMR1_MODULE, CLK_CLKSEL1_TMR1_S_HCLK, 0);
-    CLK_SetModuleClock(TMR2_MODULE, CLK_CLKSEL1_TMR2_S_HCLK, 0);
+    CLK_SetModuleClock(TMR2_MODULE, CLK_CLKSEL1_TMR1_S_HCLK, 0);
     CLK_SetModuleClock(TMR3_MODULE, CLK_CLKSEL1_TMR3_S_HCLK, 0);
     CLK_SetModuleClock(USBD_MODULE, 0, CLK_CLKDIV_USB(3));
     CLK_SetModuleClock(WDT_MODULE, CLK_CLKSEL1_WDT_S_LIRC, 0);
@@ -93,6 +94,9 @@ void SYS_Init(void)
     /* Setup SPI1 multi-function pins */
     SYS->GPC_MFP |= SYS_GPC_MFP_PC8_SPI1_SS0 | SYS_GPC_MFP_PC9_SPI1_CLK | SYS_GPC_MFP_PC10_SPI1_MISO0 | SYS_GPC_MFP_PC11_SPI1_MOSI0;
     SYS->ALT_MFP |= SYS_ALT_MFP_PC8_SPI1_SS0 | SYS_ALT_MFP_PC9_SPI1_CLK | SYS_ALT_MFP_PC10_SPI1_MISO0 | SYS_ALT_MFP_PC11_SPI1_MOSI0;
+
+	//enable PF3 gpio mode
+	SYS->GPF_MFP = SYS_GPF_MFP_PF3_GPIO;
 
     /* Update System Core Clock */
     /* User can use SystemCoreClockUpdate() to calculate SystemCoreClock and cyclesPerUs automatically. */
@@ -123,6 +127,16 @@ void SPI_Init(void)
     /* Set IP clock divider. SPI clock rate = 2MHz */
     SPI_Open(SPI_FLASH, SPI_MASTER, SPI_MODE_0, 8, 35000000);
     SPI_Open(SPI_SRAM, SPI_MASTER, SPI_MODE_0, 8, 20000000);
+}
+
+//lazy way to make a delay, could be vastly improved...
+void delay_ms(uint32_t ms)
+{
+	while(ms >= 1000) {
+		TIMER_Delay(TIMER2,1000 * 1000);
+		ms -= 1000;
+	}
+	TIMER_Delay(TIMER2,ms);
 }
 
 static void print_block_info(int block)
@@ -299,11 +313,9 @@ void console_tick(void)
 			sram_init();
 			break;
 		case 'd':
-			printf("entering disk read mode.\n");
 			fds_setup_diskread();
  			break;
 		case 't':
-			printf("entering transfer mode.\n");
 			fds_setup_transfer();
 			if(IS_READY())		printf("drive is ready\n");
 			else				printf("drive is not ready\n");
@@ -328,11 +340,26 @@ void console_tick(void)
 	}
 }
 
+void detect_board_version()
+{
+	//unconnected pins will have their weak pullups going, so they will be at VCC
+    GPIO_SetMode(PA, BIT12, GPIO_PMD_INPUT);
+    GPIO_SetMode(PA, BIT13, GPIO_PMD_INPUT);
+    GPIO_SetMode(PA, BIT14, GPIO_PMD_INPUT);
+	
+	//all grounded
+	if(PA12 == 0 && PA13 == 0 && PA14 == 0) {
+		boardver = 2;
+	}
+}
+
 int main()
 {
 	CLEAR_WRITE();
 	SET_STOPMOTOR();
 	CLEAR_SCANMEDIA();
+	CLEAR_MEDIASET();
+	CLEAR_READY();
 	
 	//setup led and button gpio
     GPIO_SetMode(LED_G_PORT, LED_G_PIN, GPIO_PMD_OUTPUT);
@@ -340,6 +367,8 @@ int main()
     GPIO_SetMode(SWITCH_PORT, SWITCH_PIN, GPIO_PMD_INPUT);
 	LED_GREEN(0);
 	LED_RED(1);
+
+	detect_board_version();
 
     /* Unlock protected registers */
     SYS_UnlockReg();
@@ -376,6 +405,7 @@ int main()
     printf("--CPU @ %0.3f MHz\n", (double)SystemCoreClock / 1000000.0f);
     printf("--SPI0 @ %0.3f MHz\n", (double)SPI_GetBusClock(SPI0) / 1000000.0f);
     printf("--SPI1 @ %0.3f MHz\n", (double)SPI_GetBusClock(SPI1) / 1000000.0f);
+    printf("--Detected board version: %d (config = %d %d %d)\n", boardver,PA12,PA13,PA14);
 	
 	NVIC_SetPriority(USBD_IRQn,2);
 	NVIC_SetPriority(TMR1_IRQn,1);
@@ -383,12 +413,12 @@ int main()
 	NVIC_SetPriority(GPAB_IRQn,0);
 	NVIC_SetPriority(EINT0_IRQn,0);
 	
-	printf("USBD_IRQn priority: %d\n",NVIC_GetPriority(USBD_IRQn));
+/*	printf("USBD_IRQn priority: %d\n",NVIC_GetPriority(USBD_IRQn));
 	printf("TMR1_IRQn priority: %d\n",NVIC_GetPriority(TMR1_IRQn));
 	printf("TMR3_IRQn priority: %d\n",NVIC_GetPriority(TMR3_IRQn));
 	printf("GPAB_IRQn priority: %d\n",NVIC_GetPriority(GPAB_IRQn));
 	printf("EINT0_IRQn priority: %d\n",NVIC_GetPriority(EINT0_IRQn));
-
+*/
 	flash_init();
 	sram_init();
 

@@ -1,4 +1,3 @@
-#if 0
 #include <stdio.h>
 #include <string.h>
 #include "NUC123.h"
@@ -29,13 +28,7 @@ volatile uint8_t *writeptr;
 volatile int writepos, writepage;
 volatile uint8_t writebuf[WRITEBUFSIZE];
 
-volatile uint8_t disklistbuf[4096 + 3];
-volatile uint8_t *disklistblock = disklistbuf;
-volatile uint8_t *disklist = disklistbuf + 1;
-int disklistpos = -1;
-
-static uint8_t tempbuffer[4096];
-
+static uint8_t tempbuffer[1024];
 
 volatile int diskblock = 0;
 
@@ -98,7 +91,7 @@ void TMR1_IRQHandler(void)
 	TIMER_ClearIntFlag(TIMER1);
 
 	//output current bit
-	PA11 = (outbit ^ rate) & 1;
+	PIN_READDATA = (outbit ^ rate) & 1;
 
 	//toggle rate
 	rate ^= 1;
@@ -166,12 +159,10 @@ __inline void check_needbyte(void)
 	}
 }
 
-void begin_transfer(void)
+static void setup_transfer(void)
 {
-	int leadin = (DEFAULT_LEAD_IN / 8) - 1;
-	int dirty = 0;
+	int leadin;
 
-	printf("beginning transfer...\r\n");
 	fifo_init((fifo_t*)&writefifo,(uint8_t*)writebuf,4096);
 
 	//initialize variables
@@ -179,12 +170,13 @@ void begin_transfer(void)
 	rate = 0;
 	bytes = 0;
 	count = 0;
+	data2 = 0;
 
 	//lead-in byte counter
 	leadin = (DEFAULT_LEAD_IN / 8) - 1;
 	
-	//finish off the 0.15 second delay
-	TIMER_Delay(TIMER2, 130 * 1000);
+	//delay of minimum 150ms
+	TIMER_Delay(TIMER2, 165 * 1000);
 
 	//enable/disable necessary irq's
     NVIC_DisableIRQ(USBD_IRQn);
@@ -201,8 +193,6 @@ void begin_transfer(void)
 	SET_READY();
 	
 	LED_RED(1);
-
-	data2 = 0;
 
 	//transfer lead-in
 	while(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
@@ -221,6 +211,14 @@ void begin_transfer(void)
 	
 	//reset byte counter
 	bytes = 256;
+}
+
+void begin_transfer(void)
+{
+	int dirty = 0;
+
+	printf("beginning transfer...\r\n");
+	setup_transfer();
 
 	//transfer disk data
 	while(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
@@ -341,167 +339,14 @@ void begin_transfer(void)
 	printf("transferred %d bytes\r\n",bytes);
 }
 
-
-//string to find to start sending the fake disklist
-uint8_t diskliststr[17] = {0x80,0x03,0x07,0x10,'D','I','S','K','L','I','S','T',0x00,0x80,0x00,0x10,0x00};
-
-int find_disklist()
-{
-	int pos = 0;
-	int count = 0;
-	uint8_t byte;
-
-	flash_read_start(0);
-	for(pos=0;pos<65500;) {
-
-		//read a byte from the flash
-		flash_read((uint8_t*)&byte,1);
-		pos++;
-		
-		//first byte matches
-		if(byte == diskliststr[0]) {
-			count = 1;
-			do {
-				flash_read((uint8_t*)&byte,1);
-				pos++;
-			} while(byte == diskliststr[count++]);
-			if(count == 18) {
-				printf("found disklist block header at %d (count = %d)\n",pos - count,count);
-
-				//skip over the crc
-				flash_read((uint8_t*)&byte,1);
-				flash_read((uint8_t*)&byte,1);
-				pos += 2;
-
-				//skip the gap
-				do {
-					flash_read((uint8_t*)&byte,1);
-					pos++;
-				} while(byte == 0 && pos < 65500);
-
-				//make sure this is a blocktype of 4
-				if(byte == 0x80) {
-					flash_read((uint8_t*)&byte,1);
-					pos++;
-					if(byte == 4) {
-						flash_read((uint8_t*)&byte,1);
-						printf("hard coded disk count = %d\n",byte);
-						flash_read_stop();
-						return(pos);
-					}
-				}
-			}
-		}
-	}
-	flash_read_stop();
-	return(-1);
-}
-
-void create_disklist(void)
-{
-	uint8_t *list = (uint8_t*)disklist + 32;
-	flash_header_t header;
-	int blocks = flash_get_total_blocks();
-	int i,num = 0;
-	uint32_t crc;
-
-	memset((uint8_t*)disklist,0,4096 + 2);
-
-	for(i=1;i<blocks;i++) {
-		
-		//read disk header information
-		flash_read_disk_header(i,&header);
-		
-		//empty block
-		if((uint8_t)header.name[0] == 0xFF) {
-			continue;
-		}
-
-		//continuation of disk sides
-		if(header.name[0] == 0x00) {
-			continue;
-		}
-
-		list[0] = (uint8_t)i;
-		memcpy(list + 1,header.name,26);
-		list[31] = 0;
-		printf("block %X: id = %02d, '%s'\r\n",i,header.id,header.name);
-		list += 32;
-		num++;
-	}
-	disklistblock[0] = 4;
-	disklist[0] = num;
-
-	//correct
-	crc = calc_crc((uint8_t*)disklistblock,4096 + 1 + 2);
-	disklist[4096] = (uint8_t)(crc >> 0);
-	disklist[4097] = (uint8_t)(crc >> 8);
-}
-
 void begin_transfer_loader(void)
 {
-	int leadin = (DEFAULT_LEAD_IN / 8) - 1;
 	int dirty = 0;
 
-	printf("beginning transfer...\r\n");
-	fifo_init((fifo_t*)&writefifo,(uint8_t*)writebuf,4096);
+	printf("beginning loader transfer...\r\n");
 
-	if(disklistpos == -1) {
-		disklistpos = find_disklist();
-		printf("find_disklist() = %d\n",disklistpos);
-		create_disklist();
-	}
-
-	sram_write(disklistpos,(uint8_t*)disklist,4096 + 2);
-
-	//initialize variables
-	outbit = 0;
-	rate = 0;
-	bytes = 0;
-	count = 0;
-
-	//lead-in byte counter
-	leadin = (DEFAULT_LEAD_IN / 8) - 1;
+	setup_transfer();
 	
-	//finish off the 0.15 second delay
-	TIMER_Delay(TIMER2, 130 * 1000);
-
-	//enable/disable necessary irq's
-    NVIC_DisableIRQ(USBD_IRQn);
-    NVIC_DisableIRQ(GPAB_IRQn);
-	NVIC_DisableIRQ(TMR3_IRQn);
-    NVIC_EnableIRQ(EINT0_IRQn);
-    NVIC_EnableIRQ(TMR1_IRQn);
-	
-	//start timers
-	TIMER_Start(TIMER0);
-	TIMER_Start(TIMER1);
-
-	//activate ready signal
-	SET_READY();
-	
-	LED_RED(1);
-
-	data2 = 0;
-
-	//transfer lead-in
-	while(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
-		
-		//if irq handler needs more data
-		if(needbyte) {
-			needbyte = 0;
-			bytes++;
-		}
-
-		//check if enough leadin data has been sent
-		if(bytes >= leadin) {
-			break;
-		}
-	}
-	
-	//reset byte counter
-	bytes = 256;
-
 	//transfer disk data
 	while(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
 
@@ -568,7 +413,7 @@ void begin_transfer_loader(void)
 		memset(tempbuffer,0,1024);
 		block_decode(tempbuffer,(uint8_t*)writebuf,&in,&out,4096,1024,2,2);
 		
-		hexdump("tempbuffer",tempbuffer,256);
+//		hexdump("tempbuffer",tempbuffer,256);
 
 		printf("loader exiting, new diskblock = %d\n",ptr[1]);
 		fds_insert_disk(ptr[1]);
@@ -580,5 +425,3 @@ void begin_transfer_loader(void)
 	LED_RED(0);
 	LED_GREEN(1);
 }
-
-#endif

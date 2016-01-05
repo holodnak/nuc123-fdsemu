@@ -544,11 +544,6 @@
               <FileType>1</FileType>
               <FilePath>..\Library\StdDriver\src\fmc.c</FilePath>
             </File>
-            <File>
-              <FileName>wdt.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Library\StdDriver\src\wdt.c</FilePath>
-            </File>
           </Files>
         </Group>
       </Groups>

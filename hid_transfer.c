@@ -19,6 +19,8 @@
 #include "config.h"
 
 uint8_t volatile g_u8EP2Ready = 0;
+int wasready;
+int sequence = 1;
 
 void hexdump(char *desc, void *addr, int len);
 
@@ -28,7 +30,6 @@ enum {
 
     DISK_READMAX=254,
     DISK_WRITEMAX=255,
-
 };
 
 void process_send_feature(uint8_t *usbdata,int len);
@@ -103,6 +104,7 @@ void USBD_IRQHandler(void)
         if(u32IntSts & USBD_INTSTS_EP0)
         {
 			extern uint8_t g_usbd_SetupPacket[];
+
             /* Clear event flag */
             USBD_CLR_INT_FLAG(USBD_INTSTS_EP0);
 
@@ -113,17 +115,17 @@ void USBD_IRQHandler(void)
         if(u32IntSts & USBD_INTSTS_EP1)
         {
 			extern uint8_t g_usbd_SetupPacket[];
+
             /* Clear event flag */
             USBD_CLR_INT_FLAG(USBD_INTSTS_EP1);
 
             // control OUT
             USBD_CtrlOut();
-			
+
 			if(g_usbd_SetupPacket[1] == SET_REPORT) {
 				USBD_MemCopy(epdata,(uint8_t*)(USBD_BUF_BASE + USBD_GET_EP_BUF_ADDR(EP1)),64);
 				process_send_feature(epdata,64);
 			}
-			
         }
 
         if(u32IntSts & USBD_INTSTS_EP2)
@@ -170,78 +172,6 @@ void USBD_IRQHandler(void)
     USBD_CLR_INT_FLAG(u32IntSts);
 }
 
-int wasready;
-int sequence = 1;
-
-void HID_GetOutReport(uint8_t *pu8EpBuf, uint32_t u32Size)
-{
-    static uint8_t u8Cmd = 0;
-	static int len = 0;
-	static int totallen = 0;
-	int ret;
-
-//	printf("HID_GetOutReport (report id = %d)\n",pu8EpBuf[0]);
-
-    /* Check if it is in the data phase of write command */
-    if((u8Cmd == ID_DISK_WRITE))// && (totalsize < 65500))
-    {
-		printf("writing data... (totallen = %d) (u32Size = %d)\n",totallen,u32Size);
-
-//		ret = fds_diskwrite_fillbuf(pu8EpBuf,64);
-		len += 64;
-		totallen += 64;
-		
-		//fillbuf returns 0 when the buffer is completely filled
-		if(ret == 0) {
-			sequence++;
-			u8Cmd = 0;
-			len = 0;
-
-//			printf("writing data... (totallen = %d)\n",totallen);
-			
-			if(IS_READY() == 0) {
-				
-				//if was previously ready
-				if(wasready) {
-					totallen = 0;
-					fds_stop_diskwrite();
-					USBD_SetStall(2);
-				}
-				
-				//hasnt been ready yet
-				else {
-					while(IS_READY() == 0);
-					wasready = 1;
-				}
-			}
-
-			if(IS_READY()) {
-				fds_diskwrite();
-			}
-
-		}
-				
-//		if(IS_READY() == 0) {
-//			fds_stop_diskwrite();
-//            USBD_SetStall(3);
-//		}
-    }
-    else
-    {
-		u8Cmd = pu8EpBuf[0];
-		
-		if(u8Cmd == ID_DISK_WRITE) {
-//			fds_diskwrite_fillbuf(pu8EpBuf + 1,63);
-			len = 63;
-			totallen += 63;
-		}
-		else {
-			printf("unknown OUT report id = %X\n",u8Cmd);
-		}
-    }
-}
-
-
 void EP2_Handler(void)  /* Interrupt IN handler */
 {
 //    HID_SetInReport();
@@ -249,10 +179,10 @@ void EP2_Handler(void)  /* Interrupt IN handler */
 
 void EP3_Handler(void)  /* Interrupt OUT handler */
 {
-    uint8_t *ptr;
+//    uint8_t *ptr;
     /* Interrupt OUT */
-    ptr = (uint8_t *)(USBD_BUF_BASE + USBD_GET_EP_BUF_ADDR(EP3));
-    HID_GetOutReport(ptr, USBD_GET_PAYLOAD_LEN(EP3));
+//    ptr = (uint8_t *)(USBD_BUF_BASE + USBD_GET_EP_BUF_ADDR(EP3));
+//    HID_GetOutReport(ptr, USBD_GET_PAYLOAD_LEN(EP3));
     USBD_SET_PAYLOAD_LEN(EP3, EP3_MAX_PKT_SIZE);
 }
 
@@ -312,7 +242,8 @@ uint8_t size;
 uint8_t holdcs,initcs;
 uint32_t addr;
 
-void update_firmware(void)
+//update firmware stored in flash at $8000
+void update_firmware_flash(void)
 {
 	int i;
 	uint32_t data, chksum = 0;
@@ -339,6 +270,11 @@ void update_firmware(void)
 	FMC_DisableAPUpdate();
 	FMC_Close();
 
+	//erase old firmware copy from the flash
+	for(i=0;i<8;i++) {
+		flash_erase_sector(0,8 + i);
+	}
+
 	printf("chksum = %X\n",chksum);
 	if(chksum != 0) {
 		printf("firmware checksum error\n");
@@ -346,12 +282,137 @@ void update_firmware(void)
 		return;
 	}
 
-	printf("firmware updated, rebooting\n");
+	printf("firmware updated from flash, rebooting\n");
 
 	//reboot to bootloader
     FMC->ISPCON = 2;
     SYS->IPRSTC1 = 2;
     while(1);
+}
+
+//update firmware from data stored in sram
+void update_firmware_sram(void)
+{
+	int i;
+	uint32_t data, chksum = 0;
+
+	SYS_UnlockReg();
+
+	FMC_Open();
+	FMC_EnableAPUpdate();
+
+	//erase upper 32kb
+	for(i=0x8000;i<0x10000;i+=512) {
+		if(FMC_Erase(i) == -1) {
+			printf("FMC_Erase failed\n");
+		}
+	}
+
+	//copy from sram to aprom
+	for(i=0;i<0x8000;i+=4) {
+		sram_read(i, (uint8_t*)&data, 4);
+		chksum ^= data;
+		FMC_Write(i + 0x8000,data);
+	}
+
+	//re-read the data written, making sure crc is ok
+	if(chksum == 0) {
+		for(i=0;i<0x8000;i+=4) {
+			sram_read(i, (uint8_t*)&data, 4);
+			data = FMC_Read(i + 0x8000);
+			chksum ^= data;
+		}
+	}
+
+	//if checksum is bad, erase written data
+	if(chksum != 0) {
+		//erase upper 32kb
+		for(i=0x8000;i<0x10000;i+=512) {
+			FMC_Erase(i);
+		}		
+	}
+
+	//finish flash read/write
+	FMC_DisableAPUpdate();
+	FMC_Close();
+
+	//report error for bad checksum
+	if(chksum != 0) {
+		printf("firmware checksum error\n");
+		SYS_LockReg();
+		return;
+	}
+
+	printf("firmware updated from sram, rebooting\n");
+
+	//reboot to bootloader
+    FMC->ISPCON = 2;
+    SYS->IPRSTC1 = 2;
+    while(1);
+}
+
+void update_firmware(void)
+{
+	uint32_t id, data, chksum;
+	int i;
+
+	//initialize local variables
+	id = data = chksum = 0;
+
+	//check for firmware stored in flash (old temporary location)
+	flash_read_data(0x10000 - 8,(uint8_t*)&id,4);
+
+	//see if id matches
+	if(id == 0xDEADBEEF) {
+		
+		//now check the checksum to verify the firmware image
+		flash_read_start(0x8000);
+		for(i=0x8000;i<0x10000;i+=4) {
+			flash_read((uint8_t*)&data,4);
+			chksum ^= data;
+		}
+		flash_read_stop();
+
+		//report checksum error
+		if(chksum != 0) {
+			printf("firmware id found in flash but there was checksum error\n");
+		}
+		
+		//continue updating from flash
+		else {
+			update_firmware_flash();
+			return;
+		}
+	}
+	
+	//re-initialize variables and prepare checking for firmware in sram
+	id = data = chksum = 0;
+	
+	//read id from sram
+	sram_read(0x8000 - 8,(uint8_t*)&id,4);
+
+	//see if id matches
+	if(id == 0xDEADBEEF) {
+
+		//now check the checksum to verify the firmware image
+		for(i=0;i<0x8000;i+=4) {
+			sram_read(i,(uint8_t*)&data,4);
+			chksum ^= data;
+		}
+
+		//report checksum error
+		if(chksum != 0) {
+			printf("firmware id found in sram but there was checksum error\n");
+		}
+		
+		//continue updating from flash
+		else {
+			update_firmware_sram();
+			return;
+		}
+	}
+	
+	printf("firmware update image not found\n");
 }
 
 uint8_t selftest_result = 0xFF;
@@ -385,6 +446,16 @@ void selftest(void)
 	}
 }
 
+void hexdump2(char *desc, uint8_t (*readfunc)(uint32_t), int pos, int len);
+
+static uint8_t lz4_read(uint32_t addr)
+{
+	uint8_t ret;
+
+	sram_read(addr,&ret,1);
+	return(ret);
+}
+
 void process_send_feature(uint8_t *usbdata,int len)
 {
 	uint8_t *buf = epdata;
@@ -398,11 +469,8 @@ void process_send_feature(uint8_t *usbdata,int len)
 	initcs = buf[2];
 	holdcs = buf[3];
 
-//	hexdump("process_send_feature: buf",buf,64);
-
-	//spi write
+	//flash write
 	if(reportid == ID_SPI_WRITE) {
-//		printf("process_send_feature: ID_SPI_WRITE: init,hold = %d,%d : len = %d\n",initcs,holdcs,size);
 		if(initcs) {
 			spi_deselect_device(SPI_FLASH, 0);
 			spi_select_device(SPI_FLASH, 0);
@@ -412,6 +480,20 @@ void process_send_feature(uint8_t *usbdata,int len)
 		bytes += size;
 		if(holdcs == 0) {
 			spi_deselect_device(SPI_FLASH, 0);
+		}
+	}
+
+	//sram write
+	else if(reportid == ID_SRAM_WRITE) {
+		if(initcs) {
+			spi_deselect_device(SPI_SRAM, 0);
+			spi_select_device(SPI_SRAM, 0);
+			bytes = 0;
+		}
+		spi_write_packet(SPI_SRAM,buf + 4,size);
+		bytes += size;
+		if(holdcs == 0) {
+			spi_deselect_device(SPI_SRAM, 0);
 		}
 	}
 
@@ -426,35 +508,12 @@ void process_send_feature(uint8_t *usbdata,int len)
 		update_firmware();
 	}
 
-	//spi read
-	else if(reportid == ID_SPI_READ) {
-		switch(buf[4]) {
-			default:
-				printf("process_send_feature: ID_SPI_READ: unknown command $%X\n",buf[4]);
-				break;
-		}
-	}
-
-	//spi read stop
-	else if(reportid == ID_SPI_READ_STOP) {
-		switch(buf[4]) {
-			default:
-				printf("process_send_feature: ID_SPI_READ_STOP: unknown command $%X\n",buf[4]);
-				break;
-		}
-	}
-
 	//begin reading the disk
 	else if(reportid == ID_DISK_READ_START) {
-//		printf("process_send_feature: ID_DISK_READ_START\n");
 //		fds_setup_diskread();
-
-		//TODO: the above and below lines of code do not work well together when being called back-to-back
-		//why??
 		
 		fds_start_diskread();
 		sequence = 1;
-//		startread = 1;
 	}
 
 	else if(reportid == ID_DISK_WRITE_START) {
@@ -463,26 +522,10 @@ void process_send_feature(uint8_t *usbdata,int len)
 		fds_start_diskwrite();
 		wasready = 0;
 		sequence = 1;
-//		sequence = 1;
-//		startread = 1;
-		printf("process_send_feature: ID_DISK_WRITE_START\n");
+//		printf("process_send_feature: ID_DISK_WRITE_START\n");
+//		hexdump2("write dump",lz4_read,3537,256);
 		fds_diskwrite();
 		fds_stop_diskwrite();
-	}
-
-	else if(reportid == ID_SRAM_WRITE) {
-		if(initcs) {
-			spi_deselect_device(SPI_SRAM, 0);
-			__NOP();
-			spi_select_device(SPI_SRAM, 0);
-			bytes = 0;
-		}
-//		printf("writing sram: initcs = %d, holdcs = %d, size = %d\n",initcs,holdcs,size);
-		spi_write_packet(SPI_SRAM,buf + 4,size);
-		bytes += size;
-		if(holdcs == 0) {
-			spi_deselect_device(SPI_SRAM, 0);
-		}
 	}
 
 	else if(reportid == ID_SELFTEST) {
@@ -498,19 +541,25 @@ int get_feature_report(uint8_t reportid, uint8_t *buf)
 {
 	int len = 63;
 
-	//spi read
+	//flash read
 	if(reportid == ID_SPI_READ) {
 		spi_read_packet(SPI_FLASH, buf, len);
-//		printf("get_feature_report: ID_SPI_READ: len = %d\n",len);
 	}
-
-	//spi read stop
 	else if(reportid == ID_SPI_READ_STOP) {
 		spi_read_packet(SPI_FLASH, buf, len);
 		spi_deselect_device(SPI_FLASH, 0);
-//		printf("get_feature_report: ID_SPI_READ_STOP: len = %d\n",len);
 	}
 
+	//sram read
+	else if(reportid == ID_SRAM_READ) {
+		spi_read_packet(SPI_SRAM, buf, len);
+	}
+	else if(reportid == ID_SRAM_READ_STOP) {
+		spi_read_packet(SPI_SRAM, buf, len);
+		spi_deselect_device(SPI_SRAM, 0);
+	}
+	
+	//disk read
 	else if(reportid == ID_DISK_READ) {
 		buf[0] = sequence++;
 		len = fds_diskread_getdata(buf + 1,254) + 1;
@@ -519,6 +568,7 @@ int get_feature_report(uint8_t reportid, uint8_t *buf)
 		}
 	}
 
+	//self testing result
 	else if(reportid == ID_SELFTEST) {
 		buf[0] = selftest_result;
 		len = 1;
@@ -545,9 +595,13 @@ void HID_ClassRequest(void)
         {
             case GET_REPORT:
                 if(buf[3] == 3) {
+					
+					//data stage
 					len = get_feature_report(buf[2],usbbuf + 1);
 					usbbuf[0] = buf[2];
 					USBD_PrepareCtrlIn(usbbuf, len + 1);
+					
+					//status stage
 					USBD_PrepareCtrlOut(0, 0);
 					break;
 				}
@@ -568,8 +622,19 @@ void HID_ClassRequest(void)
             {
                 if(buf[3] == 3)
                 {
+					//data stage
+//				USBD_MemCopy(epdata,(uint8_t*)(USBD_BUF_BASE + USBD_GET_EP_BUF_ADDR(EP1)),64);
+//					USBD_PrepareCtrlOut((uint8_t *)&epdata, buf[6]);
+	//				hexdump("epdata",epdata,64);
+		//			process_send_feature(epdata,64);
 					USBD_SET_DATA1(EP1);
+//                    USBD_SET_EP_BUF_ADDR(EP1, epbuf);
 					USBD_SET_PAYLOAD_LEN(EP1, 64);
+					
+					
+					//status stage
+//					USBD_SET_DATA1(EP0);
+//					USBD_SET_PAYLOAD_LEN(EP0, 0);
                     USBD_PrepareCtrlIn(0, 0);
                 }
                 break;

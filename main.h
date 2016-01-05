@@ -42,4 +42,6 @@
 extern const uint32_t version;
 extern const uint32_t buildnum;
 
+void delay_ms(uint32_t ms);
+
 #endif
