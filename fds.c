@@ -11,7 +11,7 @@
 #include "transfer.h"
 
 //time in milliseconds for disk flip delay
-#define FLIPDELAY 1000
+#define FLIPDELAY 1333
 
 void fds_init(void)
 {
