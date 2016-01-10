@@ -411,12 +411,12 @@ void begin_transfer_loader(void)
 		bin_to_raw03(tempbuffer,(uint8_t*)writebuf,len / 8,WRITEBUFSIZE);
 		in = out = 0;
 		memset(tempbuffer,0,1024);
-		block_decode(tempbuffer,(uint8_t*)writebuf,&in,&out,4096,1024,2,2);
+		block_decode(tempbuffer,(uint8_t*)writebuf,&in,&out,4096,1024,3,0xDB);
 		
-//		hexdump("tempbuffer",tempbuffer,256);
+		hexdump("tempbuffer",tempbuffer,256);
 
-		printf("loader exiting, new diskblock = %d\n",ptr[1]);
-		fds_insert_disk(ptr[1]);
+		printf("loader exiting, new diskblock = %d\n",ptr[1] | (ptr[2] << 8));
+		fds_insert_disk(ptr[1] | (ptr[2] << 8));
 	}
 	else {
 		printf("transferred %d bytes\r\n",bytes);

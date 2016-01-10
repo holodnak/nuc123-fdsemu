@@ -249,7 +249,9 @@ void fds_tick(void)
 #define COPYBUFFERSIZE	256
 static uint8_t copybuffer[COPYBUFFERSIZE];
 
-void loader_copy(void);
+void loader_copy(int location);
+
+static const char loaderfilename[] = "loader.fds";
 
 void fds_insert_disk(int block)
 {
@@ -260,8 +262,19 @@ void fds_insert_disk(int block)
 	
 	//decompress loader to sram
 	if(block == -1) {
-		loader_copy();
-		printf("inserting loader disk image\r\n");
+		flash_read_data(0,copybuffer,256);
+		
+		//check if slot 0 has an image named "loader.fds"
+		if(memcmp(copybuffer,loaderfilename,10) == 0) {
+			loader_copy(1);
+			printf("inserting loader disk image from flash\r\n");
+		}
+		
+		//decompress loader into sram
+		else {
+			loader_copy(0);
+			printf("inserting loader disk image from firmware\r\n");
+		}
 	}
 	
 	//copy image from flash to sram

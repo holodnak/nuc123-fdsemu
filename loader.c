@@ -208,7 +208,8 @@ void insert_disklist(int blockstart)
 		//fill diskinfo struct with data
 		memset(diskinfo,0,32);
 		diskinfo[0] = (uint8_t)i;
-		memcpy(diskinfo + 1,header.name,26);
+		diskinfo[1] = (uint8_t)(i >> 8);
+		memcpy(diskinfo + 2,header.name,26);
 		printf("block %X: id = %02d, '%s'\r\n",i,header.id,header.name);
 		
 		//write diskinfo struct to sram
@@ -235,13 +236,26 @@ void insert_disklist(int blockstart)
 extern char loader_lz4[];
 extern int loader_lz4_length;
 
-void loader_copy(void)
-{
-	int ret;
+#define COPYBUFFERSIZE	256
+static uint8_t copybuffer[COPYBUFFERSIZE];
 
-	printf("decompressing loader to sram...\r\n");
-	ret = decompress_lz4((uint8_t*)loader_lz4,loader_lz4_length,lz4_read,lz4_write);
-	printf("decompressed loader from %d to %d bytes (%d%% ratio)\n",loader_lz4_length, ret, 100 * loader_lz4_length / ret);
+void loader_copy(int location)
+{
+	int ret, i;
+
+	if(location == 1) {
+		printf("copying loader from flash to sram\r\n");
+		for(i=0;i<0x10000;i+=COPYBUFFERSIZE) {
+			flash_read_data(i,copybuffer,COPYBUFFERSIZE);
+			sram_write(i,copybuffer,COPYBUFFERSIZE);
+		}
+	}
+	
+	else {
+		printf("decompressing loader to sram...\r\n");
+		ret = decompress_lz4((uint8_t*)loader_lz4,loader_lz4_length,lz4_read,lz4_write);
+		printf("decompressed loader from %d to %d bytes (%d%% ratio)\n",loader_lz4_length, ret, 100 * loader_lz4_length / ret);
+	}
 
 	ret = find_disklist();
 	printf("find_disklist() = %d\n",ret);

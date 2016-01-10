@@ -66,6 +66,8 @@ int ra;
 		if(bufpos >= DISKBUFFERSIZE) {
 			bufpos = 0;
 		}
+		dataout ^= 1;
+//		PIN_WRITEDATA = dataout & 1;
     }
 }
 
@@ -108,7 +110,7 @@ int fds_diskwrite(void)
 	uint8_t byte;
 	
 	sram_read_start(0);
-
+	
 	bytes = 0;
 	printf("waiting on drive to be ready\n");
 	while(IS_READY() == 0 && IS_MOTORON());

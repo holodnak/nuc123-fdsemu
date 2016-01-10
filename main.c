@@ -8,6 +8,13 @@
  * Copyright (C) 2014~2015 Nuvoton Technology Corp. All rights reserved.
 *****************************************************************************/
 
+/*
+TODO:
+
+- loader.c and fds.c both have variable named "copybuffer"...consolidate
+- diskrw.c and transfer.c both have 4096 byte buffers for writes...consolidatre
+
+*/
 #include <stdio.h>
 #include "NUC123.h"
 #include "spiutil.h"
@@ -17,8 +24,6 @@
 #include "hid_transfer.h"
 #include "main.h"
 #include "config.h"
-
-//#define EXTERNAL_XTAL
 
 #define HCLK_CLOCK           72000000
 
