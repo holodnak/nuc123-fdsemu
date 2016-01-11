@@ -123,7 +123,6 @@ void USBD_IRQHandler(void)
             USBD_CtrlOut();
 
 			if(g_usbd_SetupPacket[1] == SET_REPORT) {
-				USBD_MemCopy(epdata,(uint8_t*)(USBD_BUF_BASE + USBD_GET_EP_BUF_ADDR(EP1)),64);
 				process_send_feature(epdata,64);
 			}
         }
@@ -620,22 +619,13 @@ void HID_ClassRequest(void)
         {
             case SET_REPORT:
             {
-                if(buf[3] == 3)
-                {
+                if(buf[3] == 3) {
 					//data stage
-//				USBD_MemCopy(epdata,(uint8_t*)(USBD_BUF_BASE + USBD_GET_EP_BUF_ADDR(EP1)),64);
-//					USBD_PrepareCtrlOut((uint8_t *)&epdata, buf[6]);
-	//				hexdump("epdata",epdata,64);
-		//			process_send_feature(epdata,64);
-					USBD_SET_DATA1(EP1);
-//                    USBD_SET_EP_BUF_ADDR(EP1, epbuf);
-					USBD_SET_PAYLOAD_LEN(EP1, 64);
-					
-					
+					USBD_PrepareCtrlOut((uint8_t *)&epdata, buf[6]);
+
 					//status stage
-//					USBD_SET_DATA1(EP0);
-//					USBD_SET_PAYLOAD_LEN(EP0, 0);
-                    USBD_PrepareCtrlIn(0, 0);
+					USBD_SET_DATA1(EP0);
+					USBD_SET_PAYLOAD_LEN(EP0, 0);
                 }
                 break;
             }
