@@ -3,11 +3,15 @@
 
 typedef struct flash_header_s {
     char		name[240];			//null terminated ascii string
-	uint16_t	next_disk;		//block number of next disk (after this one, for dual sided game or games with two disks)
+	uint16_t	size;				//size of data
 	uint16_t	lead_in;			//number of bits for lead in (0 for default)
 	uint16_t	id;					//block id number
-	uint8_t		reserved[10];
-//    uint8_t		data[0xff00];	//disk data, beginning with lead in
+	uint16_t	nextid;				//id of next block in disk chain
+	uint8_t		flags;				//disk flags cr0000tt
+									// c = compressed
+									// r = read only
+									// t = type
+	uint8_t		reserved[7];
 } flash_header_t;
 
 void flash_get_id(uint8_t *buf);

@@ -15,9 +15,11 @@ static volatile uint32_t dataout,dataout2;
 static volatile int count;
 static volatile int needbyte;
 
-#define DISKBUFFERSIZE	4096
+//kludges?  we have those... :<
+#define DISKBUFFERSIZE	WRITEBUFSIZE
+extern volatile uint8_t writebuf[WRITEBUFSIZE];
 
-static volatile uint8_t diskbuffer[DISKBUFFERSIZE];
+static volatile uint8_t *diskbuffer = writebuf;
 static volatile int bufpos, sentbufpos;
 static volatile int bytes;
 
@@ -47,7 +49,9 @@ void TMR3_IRQHandler(void)
 	}
 }
 
-//for data coming out of the disk drive
+extern int ir_incoming;
+
+//for data coming out of the disk drive (or ir data)
 void GPAB_IRQHandler(void)
 {
 int ra;
@@ -69,6 +73,12 @@ int ra;
 		dataout ^= 1;
 //		PIN_WRITEDATA = dataout & 1;
     }
+	
+	//ir remote control
+/*    if(GPIO_GET_INT_FLAG(PB, BIT10)) {
+		GPIO_CLR_INT_FLAG(PB, BIT10);
+		ir_incoming = 1;
+	}*/
 }
 
 //setup for writing a disk
@@ -105,6 +115,8 @@ void fds_stop_diskwrite(void)
 	SET_STOPMOTOR();
 }
 
+extern uint8_t doctor[];
+
 int fds_diskwrite(void)
 {
 	uint8_t byte;
@@ -123,6 +135,9 @@ int fds_diskwrite(void)
 			needbyte = 0;
 			if(bytes < 0x10000) {
 				sram_read_byte(&byte);
+			}
+			else if(bytes < (0x10000 + 8192)) {
+				byte = doctor[bytes - 0x10000];
 			}
 			else {
 				byte = 0;

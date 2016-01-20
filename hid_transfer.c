@@ -447,19 +447,15 @@ void selftest(void)
 
 void hexdump2(char *desc, uint8_t (*readfunc)(uint32_t), int pos, int len);
 
-static uint8_t lz4_read(uint32_t addr)
-{
-	uint8_t ret;
-
-	sram_read(addr,&ret,1);
-	return(ret);
-}
+extern uint8_t doctor[];
 
 void process_send_feature(uint8_t *usbdata,int len)
 {
 	uint8_t *buf = epdata;
 	uint8_t reportid;
+	uint8_t *ptr;
 	static int bytes;
+	int i;
 
     USBD_MemCopy((uint8_t *)buf, usbdata, len);
 
@@ -489,10 +485,47 @@ void process_send_feature(uint8_t *usbdata,int len)
 			spi_select_device(SPI_SRAM, 0);
 			bytes = 0;
 		}
-		spi_write_packet(SPI_SRAM,buf + 4,size);
-		bytes += size;
+
+		ptr = buf + 4;
+		for(i=0;i<size;i++) {
+			if(bytes < 0x10000) {
+				spi_write_packet(SPI_SRAM,ptr,1);
+			}
+			else {
+				doctor[bytes - 0x10000] = *ptr;
+			}
+			bytes++;
+			ptr++;
+		}
+
+//		spi_write_packet(SPI_SRAM,buf + 4,size);
+//		bytes += size;
 		if(holdcs == 0) {
 			spi_deselect_device(SPI_SRAM, 0);
+		}
+	}
+
+	else if(reportid == ID_RAM_STARTWRITE) {
+		spi_deselect_device(SPI_SRAM, 0);
+		spi_select_device(SPI_SRAM, 0);
+		bytes = 0;
+	}
+
+	else if(reportid == ID_RAM_STOPWRITE) {
+		spi_deselect_device(SPI_SRAM, 0);
+	}
+
+	else if(reportid == ID_RAM_WRITE) {
+		ptr = buf + 4;
+		for(i=0;i<size;i++) {
+			if(bytes < 0x10000) {
+				spi_write_packet(SPI_SRAM,ptr,1);
+			}
+			else {
+				doctor[bytes - 0x10000] = *ptr;
+			}
+			ptr++;
+			bytes++;
 		}
 	}
 
@@ -620,6 +653,7 @@ void HID_ClassRequest(void)
             case SET_REPORT:
             {
                 if(buf[3] == 3) {
+//					printf("set_report: buf[6] = %d\n",buf[6]);
 					//data stage
 					USBD_PrepareCtrlOut((uint8_t *)&epdata, buf[6]);
 

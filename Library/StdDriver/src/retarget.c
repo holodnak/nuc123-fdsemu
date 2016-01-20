@@ -66,8 +66,8 @@ void Hard_Fault_Handler(uint32_t stack[])
     stackDump(stack);
 
     // Replace while(1) with chip reset if WDT is not enabled for end product
-    while(1);
-    //SYS->IPRSTC1 = SYS_IPRSTC1_CHIP_RST_Msk;
+//    while(1);
+	SYS->IPRSTC1 = SYS_IPRSTC1_CHIP_RST_Msk;
 }
 
 /*---------------------------------------------------------------------------------------------------------*/

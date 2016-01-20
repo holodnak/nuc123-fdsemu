@@ -89,10 +89,12 @@ PIN 47 = rate
 #define TRANSFER_RATE		96400
 #define FDS_KHZ(hz)			(hz / TRANSFER_RATE)
 
+#define COPYBUFFERSIZE	256
+#define WRITEBUFSIZE	4096
+
+extern volatile uint8_t writebuf[];
 extern volatile int diskblock;
-extern volatile int startread;
-extern volatile uint8_t *readbuf[];
-extern volatile int readbufready;
+extern uint8_t copybuffer[];
 
 //struct with information/data for the disk read/write operations
 typedef struct diskread_s {

@@ -22,11 +22,8 @@ PIN 48 = data
 PIN 47 = rate
 */
 
-#define WRITEBUFSIZE	4096
-
 volatile uint8_t *writeptr;
 volatile int writepos, writepage;
-volatile uint8_t writebuf[WRITEBUFSIZE];
 
 static uint8_t tempbuffer[1024];
 
@@ -44,6 +41,9 @@ volatile int needbyte;
 volatile fifo_t writefifo;
 volatile int writing;
 volatile int decodepos;
+
+//extra ram to load game doctor images into
+uint8_t doctor[8192];
 
 __inline uint8_t raw_to_raw03_byte(uint8_t raw)
 {
@@ -152,7 +152,12 @@ __inline void check_needbyte(void)
 		needbyte = 0;
 		
 		//read next byte to be output
-		sram_read(bytes,(uint8_t*)&data2,1);
+		if(bytes < 0x10000) {
+			sram_read(bytes,(uint8_t*)&data2,1);
+		}
+		else if(bytes < (0x10000 + 8192)) {
+			data2 = doctor[bytes - 0x10000];
+		}
 		
 		//increment the byte counter
 		bytes++;
@@ -296,7 +301,7 @@ void begin_transfer(void)
 		}
 
 		//check if insane
-		if(bytes >= 0xFF00) {
+		if(bytes >= (0x10000 + 8192)) {
 			printf("reached end of data block, something went wrong...\r\n");
 			break;
 		}

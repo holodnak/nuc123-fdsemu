@@ -1,13 +1,15 @@
 #include <stdio.h>
 #include <string.h>
 #include "NUC123.h"
-//#include "fds.h"
-//#include "fdsutil.h"
+#include "fds.h"
 #include "sram.h"
 #include "flash.h"
 
 //size of entire disk list data struct array
 #define DISKLISTSIZE (32 * 256)		//size of entry * number of slots
+
+extern char loader_lz4[];
+extern int loader_lz4_length;
 
 /*
 	decompress lz4 data.
@@ -16,9 +18,8 @@
 	cb_read = callback for reading uncompressed data
 	cb_write = callback for writing uncompressed data
 */
-static int decompress_lz4(uint8_t *buf, int len, uint8_t(*cb_read)(uint32_t), void(*cb_write)(uint32_t,uint8_t))
+int decompress_lz4(uint8_t(*cb_readsrc)(uint32_t), int srclen, uint8_t(*cb_read)(uint32_t), void(*cb_write)(uint32_t,uint8_t))
 {
-	uint8_t *ptr = buf;
 	uint8_t token, tmp;
 	int inlen = 0;
 	int outlen = 0;
@@ -29,8 +30,8 @@ static int decompress_lz4(uint8_t *buf, int len, uint8_t(*cb_read)(uint32_t), vo
 	inlen += 7;
 
 	//loop thru
-	while (inlen < len) {
-		token = ptr[inlen++];
+	while (inlen < srclen) {
+		token = cb_readsrc(inlen++);
 
 		//literal part
 		if ((token >> 4) & 0xF) {
@@ -41,25 +42,25 @@ static int decompress_lz4(uint8_t *buf, int len, uint8_t(*cb_read)(uint32_t), vo
 			//length of 15 or greater
 			if (n == 0xF) {
 				do {
-					tmp = ptr[inlen++];
+					tmp = cb_readsrc(inlen++);
 					n += tmp;
 				} while (tmp == 0xFF);
 			}
 
 			//write literals to output
 			while (n--) {
-				cb_write(outlen++, ptr[inlen++]);
+				cb_write(outlen++, cb_readsrc(inlen++));
 			}
 		}
 
 		//match part (if it is there)
-		if ((inlen + 12) >= len) {
+		if ((inlen + 12) >= srclen) {
 			break;
 		}
 
 		//get match offset
-		offset = ptr[inlen++];
-		offset |= ptr[inlen++] << 8;
+		offset = cb_readsrc(inlen++);
+		offset |= cb_readsrc(inlen++) << 8;
 
 		//calculate match length
 		n = token & 0xF;
@@ -67,7 +68,7 @@ static int decompress_lz4(uint8_t *buf, int len, uint8_t(*cb_read)(uint32_t), vo
 		//length of 15 or greater
 		if (n == 0xF) {
 			do {
-				tmp = ptr[inlen++];
+				tmp = cb_readsrc(inlen++);
 				n += tmp;
 			} while (tmp == 0xFF);
 		}
@@ -84,6 +85,11 @@ static int decompress_lz4(uint8_t *buf, int len, uint8_t(*cb_read)(uint32_t), vo
 	}
 
 	return(outlen);
+}
+
+static uint8_t lz4_readsrc(uint32_t addr)
+{
+	return((uint8_t)loader_lz4[addr]);
 }
 
 static uint8_t lz4_read(uint32_t addr)
@@ -233,12 +239,6 @@ void insert_disklist(int blockstart)
 	sram_write(blockstart + DISKLISTSIZE,diskinfo,2);
 }
 
-extern char loader_lz4[];
-extern int loader_lz4_length;
-
-#define COPYBUFFERSIZE	256
-static uint8_t copybuffer[COPYBUFFERSIZE];
-
 void loader_copy(int location)
 {
 	int ret, i;
@@ -253,7 +253,7 @@ void loader_copy(int location)
 	
 	else {
 		printf("decompressing loader to sram...\r\n");
-		ret = decompress_lz4((uint8_t*)loader_lz4,loader_lz4_length,lz4_read,lz4_write);
+		ret = decompress_lz4(lz4_readsrc,loader_lz4_length,lz4_read,lz4_write);
 		printf("decompressed loader from %d to %d bytes (%d%% ratio)\n",loader_lz4_length, ret, 100 * loader_lz4_length / ret);
 	}
 

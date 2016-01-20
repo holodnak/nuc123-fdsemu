@@ -11,7 +11,6 @@
 /*
 TODO:
 
-- loader.c and fds.c both have variable named "copybuffer"...consolidate
 - diskrw.c and transfer.c both have 4096 byte buffers for writes...consolidatre
 
 */
@@ -40,6 +39,68 @@ const struct ident_s ident = {
 	"NUC123-FDSemu Firmware by James Holodnak",
 	BUILDNUM
 };
+
+void hard_fault_handler_c(uint32_t *args, uint32_t lr_value)
+{
+/* These are volatile to try and prevent the compiler/linker optimising them
+away as the variables never actually get used.  If the debugger won't show the
+values of the variables, make them global my moving their declaration outside
+of this function. */
+volatile uint32_t r0;
+volatile uint32_t r1;
+volatile uint32_t r2;
+volatile uint32_t r3;
+volatile uint32_t r12;
+volatile uint32_t lr; /* Link register. */
+volatile uint32_t pc; /* Program counter. */
+volatile uint32_t psr;/* Program status register. */
+
+r0 = args[ 0 ];
+r1 = args[ 1 ];
+r2 = args[ 2 ];
+r3 = args[ 3 ];
+
+r12 = args[ 4 ];
+lr = args[ 5 ];
+pc = args[ 6 ];
+psr = args[ 7 ];
+
+printf("[hard fault]\n");
+printf("R0  = %08X\n",r0);
+printf("R1  = %08X\n",r1);
+printf("R2  = %08X\n",r2);
+printf("R3  = %08X\n",r3);
+
+printf("R12 = %08X\n",r12);
+printf("LR  = %08X\n",lr);
+printf("PC  = %08X\n",pc);
+printf("PSR = %08X\n",psr);
+
+/* When the following line is hit, the variables contain the register values. */
+for( ;; );
+}
+
+/* The prototype shows it is a naked function - in effect this is just an
+assembly function. */
+//void HardFault_Handler( void ) __attribute__( ( naked ) );
+
+/* The fault handler implementation calls a function called
+prvGetRegistersFromStack(). */
+__asm void HardFault_Handler2(void)
+{
+	movs	r0,#4
+	mov		r1,lr
+	tst		r0,r1
+	beq		stacking_used_msp
+	mrs		r0,psp
+	b		get_lr_and_branch
+stacking_used_msp
+	mrs		r0,msp
+get_lr_and_branch
+	mov		r1,lr
+	ldr		r2,=__cpp(hard_fault_handler_c)
+	bx		r2
+}
 
 void SYS_Init(void)
 {
@@ -341,6 +402,9 @@ void console_tick(void)
 			CLEAR_SCANMEDIA();
 			SET_STOPMOTOR();
 			break;
+		case 'I':
+			printf("ident: '%s'\n",ident.ident);
+			break;
 		}
 	}
 }
@@ -370,6 +434,7 @@ int main()
     GPIO_SetMode(LED_G_PORT, LED_G_PIN, GPIO_PMD_OUTPUT);
     GPIO_SetMode(LED_R_PORT, LED_R_PIN, GPIO_PMD_OUTPUT);
     GPIO_SetMode(SWITCH_PORT, SWITCH_PIN, GPIO_PMD_INPUT);
+    GPIO_SetMode(IRDATA_PORT, IRDATA_PIN, GPIO_PMD_INPUT);
 	LED_GREEN(0);
 	LED_RED(1);
 
@@ -387,8 +452,8 @@ int main()
 	SPI_Init();
 
 	TIMER_Open(TIMER0, TIMER_CONTINUOUS_MODE, 6000000);
-	TIMER_Open(TIMER1, TIMER_PERIODIC_MODE, 96400 * 2);
-	TIMER_Open(TIMER3, TIMER_PERIODIC_MODE, 96400 * 2);
+	TIMER_Open(TIMER1, TIMER_PERIODIC_MODE, TRANSFER_RATE * 2);
+	TIMER_Open(TIMER3, TIMER_PERIODIC_MODE, TRANSFER_RATE * 2);
 	TIMER_EnableInt(TIMER1);
 	TIMER_EnableInt(TIMER3);
 

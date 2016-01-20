@@ -34,6 +34,10 @@
 #define SWITCH_PIN	BIT9
 #define SWITCH		PB9
 
+#define IRDATA_PORT	PB
+#define IRDATA_PIN	BIT10
+#define IRDATA		PB10
+
 #endif
 
 #define LED_GREEN(nn)	LED_G = nn
@@ -41,6 +45,7 @@
 
 extern const uint32_t version;
 extern const uint32_t buildnum;
+extern uint32_t boardver;
 
 void delay_ms(uint32_t ms);
 
