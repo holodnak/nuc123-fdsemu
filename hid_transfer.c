@@ -32,9 +32,8 @@ enum {
     DISK_WRITEMAX=255,
 };
 
-void process_send_feature(uint8_t *usbdata,int len);
-
-uint8_t epdata[64 + 1];
+extern uint8_t epdata[];
+extern int havepacket;
 
 void USBD_IRQHandler(void)
 {
@@ -123,7 +122,7 @@ void USBD_IRQHandler(void)
             USBD_CtrlOut();
 
 			if(g_usbd_SetupPacket[1] == SET_REPORT) {
-				process_send_feature(epdata,64);
+				havepacket = 1;
 			}
         }
 

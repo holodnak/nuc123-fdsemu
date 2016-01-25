@@ -11,9 +11,18 @@
 /*
 TODO:
 
-- diskrw.c and transfer.c both have 4096 byte buffers for writes...consolidatre
+- Tomy: "I have little bit difficult about press the button on the fdsemu.
+  When I press the button, if the led flash, it is easy to count how many time I press the button."
+- Tomy: Empty disks for game doctor images (for saving)
+
+menu:
+- Key repeat.
+- Switch pages and cursor stays in same page
+- Wrapping from top to bottom line
+- Wrapping from last page to first page
 
 */
+
 #include <stdio.h>
 #include "NUC123.h"
 #include "spiutil.h"
@@ -40,74 +49,12 @@ const struct ident_s ident = {
 	BUILDNUM
 };
 
-void hard_fault_handler_c(uint32_t *args, uint32_t lr_value)
-{
-/* These are volatile to try and prevent the compiler/linker optimising them
-away as the variables never actually get used.  If the debugger won't show the
-values of the variables, make them global my moving their declaration outside
-of this function. */
-volatile uint32_t r0;
-volatile uint32_t r1;
-volatile uint32_t r2;
-volatile uint32_t r3;
-volatile uint32_t r12;
-volatile uint32_t lr; /* Link register. */
-volatile uint32_t pc; /* Program counter. */
-volatile uint32_t psr;/* Program status register. */
-
-r0 = args[ 0 ];
-r1 = args[ 1 ];
-r2 = args[ 2 ];
-r3 = args[ 3 ];
-
-r12 = args[ 4 ];
-lr = args[ 5 ];
-pc = args[ 6 ];
-psr = args[ 7 ];
-
-printf("[hard fault]\n");
-printf("R0  = %08X\n",r0);
-printf("R1  = %08X\n",r1);
-printf("R2  = %08X\n",r2);
-printf("R3  = %08X\n",r3);
-
-printf("R12 = %08X\n",r12);
-printf("LR  = %08X\n",lr);
-printf("PC  = %08X\n",pc);
-printf("PSR = %08X\n",psr);
-
-/* When the following line is hit, the variables contain the register values. */
-for( ;; );
-}
-
-/* The prototype shows it is a naked function - in effect this is just an
-assembly function. */
-//void HardFault_Handler( void ) __attribute__( ( naked ) );
-
-/* The fault handler implementation calls a function called
-prvGetRegistersFromStack(). */
-__asm void HardFault_Handler2(void)
-{
-	movs	r0,#4
-	mov		r1,lr
-	tst		r0,r1
-	beq		stacking_used_msp
-	mrs		r0,psp
-	b		get_lr_and_branch
-stacking_used_msp
-	mrs		r0,msp
-get_lr_and_branch
-	mov		r1,lr
-	ldr		r2,=__cpp(hard_fault_handler_c)
-	bx		r2
-}
-
 void SYS_Init(void)
 {
     /*---------------------------------------------------------------------------------------------------------*/
     /* Init System Clock                                                                                       */
     /*---------------------------------------------------------------------------------------------------------*/
-
+	
     /* Enable Internal RC 22.1184MHz clock */
     CLK_EnableXtalRC(CLK_PWRCON_OSC22M_EN_Msk);
 
@@ -119,8 +66,8 @@ void SYS_Init(void)
 
     /* Set core clock as HCLK_CLOCK */
     CLK_SetCoreClock(HCLK_CLOCK);
-
-    /* Enable module clocks */
+	
+	/* Enable module clocks */
     CLK_EnableModuleClock(UART0_MODULE);
     CLK_EnableModuleClock(SPI0_MODULE);
     CLK_EnableModuleClock(SPI1_MODULE);
@@ -422,6 +369,11 @@ void detect_board_version()
 	}
 }
 
+uint8_t epdata[64 + 1];
+int havepacket;
+
+void process_send_feature(uint8_t *usbdata,int len);
+
 int main()
 {
 	CLEAR_WRITE();
@@ -496,6 +448,10 @@ int main()
 
 	print_block_info(0);
 	while(1) {
+		if(havepacket) {
+			havepacket = 0;
+			process_send_feature(epdata,64);
+		}
 		console_tick();
 		fds_tick();
 	}
