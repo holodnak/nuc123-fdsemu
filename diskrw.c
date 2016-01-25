@@ -70,15 +70,7 @@ int ra;
 		if(bufpos >= DISKBUFFERSIZE) {
 			bufpos = 0;
 		}
-		dataout ^= 1;
-//		PIN_WRITEDATA = dataout & 1;
     }
-	
-	//ir remote control
-/*    if(GPIO_GET_INT_FLAG(PB, BIT10)) {
-		GPIO_CLR_INT_FLAG(PB, BIT10);
-		ir_incoming = 1;
-	}*/
 }
 
 //setup for writing a disk
@@ -125,12 +117,12 @@ int fds_diskwrite(void)
 	
 	bytes = 0;
 	printf("waiting on drive to be ready\n");
-	while(IS_READY() == 0 && IS_MOTORON());
+	while(IS_READY() == 0);
 	LED_GREEN(0);
 	printf("writing...\n");
 	SET_WRITE();
 	
-	while(IS_READY() && IS_MOTORON()) {
+	while(IS_READY()) {
 		if(needbyte) {
 			needbyte = 0;
 			if(bytes < 0x10000) {
@@ -212,17 +204,17 @@ int fds_diskread_getdata(uint8_t *bufbuf, int len)
 	if(bytes == 0) {
 		if(IS_READY() == 0) {
 			printf("waiting drive to be ready\n");
-			while(IS_READY() == 0 && IS_MOTORON());
+			while(IS_READY() == 0);
 		}
 		else {
 			printf("drive ready, starting read\n");
 		}
 	}
 	
-	while(IS_READY() && IS_MOTORON() && ((n = get_buf_size()) < len)) {
+	while(IS_READY() && ((n = get_buf_size()) < len)) {
 //		printf("waiting for data\n");
 	}
-	
+
 	if(n < len) {
 		len = n;
 	}
