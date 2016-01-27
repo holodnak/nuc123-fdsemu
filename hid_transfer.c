@@ -17,6 +17,7 @@
 #include "sram.h"
 #include "main.h"
 #include "config.h"
+#include "crc32.h"
 
 uint8_t volatile g_u8EP2Ready = 0;
 int wasready;
@@ -349,6 +350,51 @@ void update_firmware_sram(void)
     while(1);
 }
 
+//update firmware from data stored in sram
+void update_bootloader_sram(void)
+{
+	int i;
+	uint32_t data, crc, calccrc;
+
+	SYS_UnlockReg();
+
+	//read wanted crc32
+	sram_read(0x1000 + 4, (uint8_t*)&crc, 4);
+
+	//enable ldrom writes
+	FMC_Open();
+	FMC_EnableLDUpdate();
+
+	//erase upper 32kb
+	for(i=0;i<0x1000;i+=512) {
+		if(FMC_Erase(i + 0x100000) == -1) {
+			printf("bootloader: FMC_Erase failed\n");
+			return;
+		}
+	}
+
+	//copy from sram to ldrom
+	calccrc = 0;
+	for(i=0;i<0x1000;i+=4) {
+		sram_read(i, (uint8_t*)&data, 4);
+		FMC_Write(i + 0x100000,data);
+		data = FMC_Read(i + 0x100000);
+		calccrc = crc32_block((uint8_t*)&data,4,calccrc);
+	}
+
+	data = 0xCAFEBABE;
+	calccrc = crc32_block((uint8_t*)&data,4,calccrc);
+	if(calccrc != crc) {
+		printf("written crc doesnt match wanted crc (%08X != %08X)\n",crc,calccrc);
+	}
+
+	//finish flash read/write
+	FMC_DisableLDUpdate();
+	FMC_Close();
+
+	printf("bootloader updated from sram\n");
+}
+
 void update_firmware(void)
 {
 	uint32_t id, data, chksum;
@@ -413,6 +459,68 @@ void update_firmware(void)
 	printf("firmware update image not found\n");
 }
 
+void update_bootloader(void)
+{
+	uint32_t id, data, crc, calccrc;
+	int i;
+
+	//initialize local variables
+	id = data = crc = calccrc = 0;
+
+	//read id and crc from sram
+	sram_read(0x1000,(uint8_t*)&id,4);
+	sram_read(0x1000 + 4,(uint8_t*)&crc,4);
+
+	//see if id matches
+	if(id == 0xCAFEBABE) {
+
+		//now check the checksum to verify the firmware image
+		for(i=0;i<(0x1000 + 4);i+=4) {
+			sram_read(i,(uint8_t*)&data,4);
+			calccrc = crc32_block((uint8_t*)&data,4,calccrc);
+		}
+
+		//report checksum error
+		if(calccrc != crc) {
+			printf("bootloader id found in sram but there was checksum error\n");
+		}
+		
+		//continue updating from flash
+		else {
+			update_bootloader_sram();
+			return;
+		}
+	}
+	
+	printf("bootloader update error\n");
+}
+
+uint32_t bootloader_crc32(void)
+{
+	uint32_t data, crc32 = 0;
+	int i;
+
+	SYS_UnlockReg();
+
+	FMC_Open();
+
+	//re-read the data written, making sure crc is ok
+	for(i=0;i<0x1000;i+=4) {
+		data = FMC_Read(i + 0x100000);
+		crc32 = crc32_block((uint8_t*)&data,4,crc32);
+	}
+
+	data = 0xCAFEBABE;
+	crc32 = crc32_block((uint8_t*)&data,4,crc32);
+
+	FMC_Close();
+	
+	printf("bootloader crc32 = %08X\n",crc32);
+
+	return(crc32);
+}
+
+
 uint8_t selftest_result = 0xFF;
 
 void selftest(void)
@@ -446,7 +554,17 @@ void selftest(void)
 
 void hexdump2(char *desc, uint8_t (*readfunc)(uint32_t), int pos, int len);
 
-extern uint8_t doctor[];
+extern volatile uint8_t doctor[];
+
+static uint8_t lz4_read(uint32_t addr)
+{
+	uint8_t ret;
+
+	sram_read(addr,&ret,1);
+	return(ret);
+}
+
+static int isreading = 0;
 
 void process_send_feature(uint8_t *usbdata,int len)
 {
@@ -457,6 +575,7 @@ void process_send_feature(uint8_t *usbdata,int len)
 	int i;
 
     USBD_MemCopy((uint8_t *)buf, usbdata, len);
+//	printf("process_send_feature: reportid $%X\n",reportid);
 
 	reportid = buf[0];
 	size = buf[1];
@@ -479,12 +598,25 @@ void process_send_feature(uint8_t *usbdata,int len)
 
 	//sram write
 	else if(reportid == ID_SRAM_WRITE) {
+		/*
+		TODO:
+			for dealing with overflowing the SRAM into the extra "doctor" buffer, we need
+			a different way of dealing with the way we put data into the SPI SRAM chip.
+		
+			we offset by 3 because the first write, which issues the command, takes 3 bytes.
+			this 3 bytes makes it seem like there is 3 bytes of data written to the SPI SRAM chip but
+			it is really the command to write data and the address of the data, not the actual data.
+		
+			the offset of -3 put into bytes below is a quick and dirty hack.  the client software and
+			the firmware need to be updated with a new way to put data into the SRAM chip.
+		*/
+
 		if(initcs) {
 			spi_deselect_device(SPI_SRAM, 0);
 			spi_select_device(SPI_SRAM, 0);
-			bytes = 0;
+			bytes = -3;
 		}
-
+		
 		ptr = buf + 4;
 		for(i=0;i<size;i++) {
 			if(bytes < 0x10000) {
@@ -504,30 +636,6 @@ void process_send_feature(uint8_t *usbdata,int len)
 		}
 	}
 
-	else if(reportid == ID_RAM_STARTWRITE) {
-		spi_deselect_device(SPI_SRAM, 0);
-		spi_select_device(SPI_SRAM, 0);
-		bytes = 0;
-	}
-
-	else if(reportid == ID_RAM_STOPWRITE) {
-		spi_deselect_device(SPI_SRAM, 0);
-	}
-
-	else if(reportid == ID_RAM_WRITE) {
-		ptr = buf + 4;
-		for(i=0;i<size;i++) {
-			if(bytes < 0x10000) {
-				spi_write_packet(SPI_SRAM,ptr,1);
-			}
-			else {
-				doctor[bytes - 0x10000] = *ptr;
-			}
-			ptr++;
-			bytes++;
-		}
-	}
-
 	//write firmware to aprom
 	else if(reportid == ID_UPDATEFIRMWARE) {
 		printf("firmware update requested\n");
@@ -539,17 +647,25 @@ void process_send_feature(uint8_t *usbdata,int len)
 		update_firmware();
 	}
 
+	else if(reportid == ID_BOOTLOADER_UPDATE) {
+		printf("bootloader update requested\n");
+		update_bootloader();
+	}
+
 	//begin reading the disk
 	else if(reportid == ID_DISK_READ_START) {
 //		fds_setup_diskread();
-		
+		printf("diskreadstart\n");
 		fds_start_diskread();
 		sequence = 1;
+		isreading = 1;
 	}
 
 	else if(reportid == ID_DISK_WRITE_START) {
 //		fds_setup_diskread();
 		
+		hexdump2("sram",lz4_read,0xFF00,256);
+		hexdump("doctor",doctor,256);
 		fds_start_diskwrite();
 		wasready = 0;
 		sequence = 1;
@@ -572,6 +688,7 @@ int get_feature_report(uint8_t reportid, uint8_t *buf)
 {
 	int len = 63;
 
+//	printf("get_feature_report: report id %X\n",reportid);
 	//flash read
 	if(reportid == ID_SPI_READ) {
 		spi_read_packet(SPI_FLASH, buf, len);
@@ -592,10 +709,14 @@ int get_feature_report(uint8_t reportid, uint8_t *buf)
 	
 	//disk read
 	else if(reportid == ID_DISK_READ) {
-		buf[0] = sequence++;
-		len = fds_diskread_getdata(buf + 1,254) + 1;
-		if(len < 255) {
-			fds_stop_diskread();
+		if(isreading) {
+			buf[0] = sequence++;
+			len = fds_diskread_getdata(buf + 1,254) + 1;
+			if(len < 255) {
+				printf("diskreadstop\n");
+				fds_stop_diskread();
+				isreading = 0;
+			}
 		}
 	}
 
@@ -603,6 +724,16 @@ int get_feature_report(uint8_t reportid, uint8_t *buf)
 	else if(reportid == ID_SELFTEST) {
 		buf[0] = selftest_result;
 		len = 1;
+	}
+
+	//self testing result
+	else if(reportid == ID_BOOTLOADER_VERIFY) {
+		uint32_t crc = bootloader_crc32();
+		buf[0] = (uint8_t)(crc >> 0);
+		buf[1] = (uint8_t)(crc >> 8);
+		buf[2] = (uint8_t)(crc >> 16);
+		buf[3] = (uint8_t)(crc >> 24);
+		len = 4;
 	}
 
 	else {
@@ -652,6 +783,9 @@ void HID_ClassRequest(void)
             case SET_REPORT:
             {
                 if(buf[3] == 3) {
+
+					TIMER_Delay(TIMER2,250);
+
 //					printf("set_report: buf[6] = %d\n",buf[6]);
 					//data stage
 					USBD_PrepareCtrlOut((uint8_t *)&epdata, buf[6]);

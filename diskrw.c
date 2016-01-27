@@ -107,13 +107,13 @@ void fds_stop_diskwrite(void)
 	SET_STOPMOTOR();
 }
 
-extern uint8_t doctor[];
+extern volatile uint8_t doctor[];
 
 int fds_diskwrite(void)
 {
 	uint8_t byte;
 	
-	sram_read_start(0);
+//	sram_read_start(0);
 	
 	bytes = 0;
 	printf("waiting on drive to be ready\n");
@@ -126,13 +126,15 @@ int fds_diskwrite(void)
 		if(needbyte) {
 			needbyte = 0;
 			if(bytes < 0x10000) {
-				sram_read_byte(&byte);
+//				sram_read_byte(&byte);
+				sram_read(bytes,&byte,1);
 			}
 			else if(bytes < (0x10000 + 8192)) {
 				byte = doctor[bytes - 0x10000];
 			}
 			else {
 				byte = 0;
+				printf("out of space\n");
 			}
 			bytes++;
 			dataout2 = expand[byte & 0x0F];
@@ -142,7 +144,7 @@ int fds_diskwrite(void)
 	
 	CLEAR_WRITE();
 
-	sram_read_end();
+//	sram_read_end();
 	printf("disk write finished, wrote %d bytes.\n", bytes);
 	return(0);
 }
@@ -204,7 +206,8 @@ int fds_diskread_getdata(uint8_t *bufbuf, int len)
 	if(bytes == 0) {
 		if(IS_READY() == 0) {
 			printf("waiting drive to be ready\n");
-			while(IS_READY() == 0);
+			while(IS_READY() == 0) {
+			}
 		}
 		else {
 			printf("drive ready, starting read\n");

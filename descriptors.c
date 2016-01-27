@@ -86,6 +86,16 @@ const uint8_t HID_DeviceReportDescriptor[] = {
     0x95, 0x01,                    //   REPORT_COUNT (1)
     0xb1, 0x00,                    //   FEATURE (Data,Ary,Abs)
 
+    0x85, ID_BOOTLOADER_VERIFY,    //   REPORT_ID ()
+    0x09, 0x01,                    //   USAGE (Vendor Usage 1)
+    0x95, 0x05,                    //   REPORT_COUNT (1)
+    0xb1, 0x00,                    //   FEATURE (Data,Ary,Abs)
+
+    0x85, ID_BOOTLOADER_UPDATE,    //   REPORT_ID ()
+    0x09, 0x01,                    //   USAGE (Vendor Usage 1)
+    0x95, 0x01,                    //   REPORT_COUNT (1)
+    0xb1, 0x00,                    //   FEATURE (Data,Ary,Abs)
+
 	0x85, ID_RESET,                //   REPORT_ID (240)
     0x09, 0x01,                    //   USAGE (Vendor Usage 1)
     0x95, 0x01,                    //   REPORT_COUNT (1)

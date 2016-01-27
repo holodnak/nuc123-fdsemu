@@ -43,7 +43,7 @@ volatile int writing;
 volatile int decodepos;
 
 //extra ram to load game doctor images into
-uint8_t doctor[8192];
+volatile uint8_t doctor[8192];
 
 __inline uint8_t raw_to_raw03_byte(uint8_t raw)
 {

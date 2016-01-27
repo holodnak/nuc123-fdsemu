@@ -184,24 +184,10 @@ int find_first_disk_side(int block)
 
 void fds_tick(void)
 {
-	static int mediaset = 0;
 	static int ready = 0;
 	int diskflip = 0;
 
 	if(mode == MODE_DISKREAD) {
-/*		if(IS_MEDIASET() && mediaset == 0) {
-			mediaset = 1;
-			printf("disk inserted\n");
-			if(IS_WRITABLE()) {
-				printf("...and it is writable\n");
-			}
-		}
-		if(IS_MEDIASET() == 0) {
-			if(mediaset) {
-				printf("disk ejected\n");
-			}
-			mediaset = 0;
-		}*/
 		if(IS_READY() && ready == 0) {
 			ready = 1;
 			printf("ready activated\n");

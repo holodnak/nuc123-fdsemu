@@ -33,7 +33,17 @@ menu:
 #include "main.h"
 #include "config.h"
 
-#define HCLK_CLOCK           72000000
+#define FASTCLK
+
+#ifdef FASTCLK
+#define HCLK_CLOCK			72000000
+#define USB_CLKDIV			CLK_CLKDIV_USB(3)
+#define UART_CLKDIV			CLK_CLKDIV_UART(1)
+#else
+#define HCLK_CLOCK			48000000
+#define USB_CLKDIV			CLK_CLKDIV_USB(2)
+#define UART_CLKDIV			CLK_CLKDIV_UART(0)
+#endif
 
 const uint32_t version = VERSION;
 const uint32_t buildnum = BUILDNUM;
@@ -79,14 +89,14 @@ void SYS_Init(void)
     CLK_EnableModuleClock(WDT_MODULE);
 
     /* Select HCLK as the clock source of SPI0 */
-    CLK_SetModuleClock(UART0_MODULE, CLK_CLKSEL1_UART_S_HIRC, CLK_CLKDIV_UART(1));
+    CLK_SetModuleClock(UART0_MODULE, CLK_CLKSEL1_UART_S_HIRC, UART_CLKDIV);
     CLK_SetModuleClock(SPI0_MODULE, CLK_CLKSEL1_SPI0_S_HCLK, MODULE_NoMsk);
     CLK_SetModuleClock(SPI1_MODULE, CLK_CLKSEL1_SPI1_S_HCLK, MODULE_NoMsk);
     CLK_SetModuleClock(TMR0_MODULE, CLK_CLKSEL1_TMR0_S_HCLK, 0);
     CLK_SetModuleClock(TMR1_MODULE, CLK_CLKSEL1_TMR1_S_HCLK, 0);
     CLK_SetModuleClock(TMR2_MODULE, CLK_CLKSEL1_TMR2_S_HCLK, 0);
     CLK_SetModuleClock(TMR3_MODULE, CLK_CLKSEL1_TMR3_S_HCLK, 0);
-    CLK_SetModuleClock(USBD_MODULE, 0, CLK_CLKDIV_USB(3));
+    CLK_SetModuleClock(USBD_MODULE, 0, USB_CLKDIV);
     CLK_SetModuleClock(WDT_MODULE, CLK_CLKSEL1_WDT_S_LIRC, 0);
 
     /* Select UART module clock source */
