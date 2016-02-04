@@ -444,13 +444,7 @@ int main()
 	NVIC_SetPriority(TMR3_IRQn,0);
 	NVIC_SetPriority(GPAB_IRQn,0);
 	NVIC_SetPriority(EINT0_IRQn,0);
-	
-/*	printf("USBD_IRQn priority: %d\n",NVIC_GetPriority(USBD_IRQn));
-	printf("TMR1_IRQn priority: %d\n",NVIC_GetPriority(TMR1_IRQn));
-	printf("TMR3_IRQn priority: %d\n",NVIC_GetPriority(TMR3_IRQn));
-	printf("GPAB_IRQn priority: %d\n",NVIC_GetPriority(GPAB_IRQn));
-	printf("EINT0_IRQn priority: %d\n",NVIC_GetPriority(EINT0_IRQn));
-*/
+
 	flash_init();
 	sram_init();
 

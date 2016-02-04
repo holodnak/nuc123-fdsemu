@@ -23,7 +23,7 @@ int decompress_lz4(uint8_t(*cb_readsrc)(uint32_t), int srclen, uint8_t(*cb_read)
 	uint8_t token, tmp;
 	int inlen = 0;
 	int outlen = 0;
-	uint16_t offset;
+	uint32_t offset;
 	uint32_t n;
 
 	inlen += 4;

@@ -96,16 +96,6 @@ extern volatile uint8_t writebuf[];
 extern volatile int diskblock;
 extern uint8_t copybuffer[];
 
-//struct with information/data for the disk read/write operations
-typedef struct diskread_s {
-	uint8_t	data[512];			//data storage for reads/writes
-	uint8_t	*buf[2];			//buffer pointers
-	int		ready;				//flag for when data is ready in a buffer
-	int		curbuf;				//buffer currently reading/writing
-	int		pos;				//position in the buffer
-	int		sequence;			//chunk sequence number
-} diskread_t;
-
 void fds_init(void);
 int fds_diskread_getdata(uint8_t *buf, int len);
 void fds_start_diskread(void);

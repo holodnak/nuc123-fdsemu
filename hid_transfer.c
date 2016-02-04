@@ -515,7 +515,7 @@ uint32_t bootloader_crc32(void)
 
 	FMC_Close();
 	
-	printf("bootloader crc32 = %08X\n",crc32);
+//	printf("bootloader crc32 = %08X\n",crc32);
 
 	return(crc32);
 }
@@ -664,8 +664,8 @@ void process_send_feature(uint8_t *usbdata,int len)
 	else if(reportid == ID_DISK_WRITE_START) {
 //		fds_setup_diskread();
 		
-		hexdump2("sram",lz4_read,0xFF00,256);
-		hexdump("doctor",doctor,256);
+//		hexdump2("sram",lz4_read,0xFF00,256);
+//		hexdump("doctor",doctor,256);
 		fds_start_diskwrite();
 		wasready = 0;
 		sequence = 1;
