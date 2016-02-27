@@ -8,6 +8,7 @@
 #include "fifo.h"
 #include "main.h"
 #include "sram.h"
+#include "config.h"
 
 /*
 PIN 43 = -write
@@ -28,13 +29,15 @@ volatile int writepos, writepage;
 static uint8_t tempbuffer[1024];
 
 volatile int diskblock = 0;
+volatile int savediskloaded = 0;
 
 //for sending data to the ram adaptor
-volatile int rate = 0;
+//volatile int rate = 0;
 volatile int count = 0;
 
-volatile uint8_t data, data2;
-volatile int outbit;
+//volatile uint8_t data, data2;
+volatile uint32_t dataout,dataout2;
+//volatile int outbit;
 volatile int bytes;
 volatile int needpage;
 volatile int needbyte;
@@ -45,8 +48,12 @@ volatile int decodepos;
 //extra ram to load game doctor images into
 volatile uint8_t doctor[8192];
 
+const uint8_t expand[]={ 0xaa, 0xa9, 0xa6, 0xa5, 0x9a, 0x99, 0x96, 0x95, 0x6a, 0x69, 0x66, 0x65, 0x5a, 0x59, 0x56, 0x55 };
+
 __inline uint8_t raw_to_raw03_byte(uint8_t raw)
 {
+
+#ifdef FASTCLK
 	if(raw < 0x48)
 		return(3);
 	else if(raw < 0x70)
@@ -55,6 +62,18 @@ __inline uint8_t raw_to_raw03_byte(uint8_t raw)
 		return(1);
 	else if(raw < 0xD0)
 		return(2);
+#else
+//3d 5d 7c
+	if(raw < 0x2D)
+		return(3);
+	else if(raw < 0x4D)
+		return(0);
+	else if(raw < 0x6D)
+		return(1);
+	else if(raw < 0x8D)
+		return(2);	
+#endif
+
 	return(3);
 }
 
@@ -90,8 +109,28 @@ void TMR1_IRQHandler(void)
 {
 	TIMER_ClearIntFlag(TIMER1);
 
+	//output bit to readdata pin
+	PIN_READDATA = (dataout & 1) ^ 1;
+
+	//shift dataout to get ready for next bit
+	dataout >>= 1;
+
+	//increment bit counter
+	count++;
+
+	//check if we finished with the data and need more
+	if(count == 16) {
+		count = 0;
+
+		//read next byte from the page
+		dataout = dataout2;
+		
+		//signal we need another mfm byte
+		needbyte++;
+	}
+
 	//output current bit
-	PIN_READDATA = (outbit ^ rate) & 1;
+/*	PIN_READDATA = (outbit ^ rate) & 1;
 
 	//toggle rate
 	rate ^= 1;
@@ -116,7 +155,7 @@ void TMR1_IRQHandler(void)
 		
 		//and shift the data byte over to the next next bit
 		data >>= 1;
-	}
+	}*/
 }
 
 //for writes coming out of the ram adaptor
@@ -138,27 +177,94 @@ void EINT0_IRQHandler(void)
 		TIMER0->TCSR = TIMER_CONTINUOUS_MODE | 7 | TIMER_TCSR_TDR_EN_Msk | TIMER_TCSR_CEN_Msk;
 
 		//put the data into the fifo buffer
-		fifo_write_byte((fifo_t*)&writefifo,(uint8_t)ra);
+		fifo_write_byte((uint8_t)ra);
 	}
 }
 
 void hexdump(char *desc, void *addr, int len);
 
+#define SPI_TIMEOUT		25000
+
+__inline void spi_sram_write_byte(uint8_t byte)
+{
+	int timeout;
+
+	SPI_WRITE_TX0(SPI_SRAM, byte);
+	SPI_TRIGGER(SPI_SRAM);
+	timeout = SPI_TIMEOUT;
+	while(SPI_IS_BUSY(SPI_SRAM)) {
+		if(!timeout--) {
+			printf("spi_sram_write_byte timeout\n");
+			break;
+		}
+	}
+}
+
+__inline uint8_t spi_sram_read_byte(void)
+{
+	int timeout;
+
+	timeout = SPI_TIMEOUT;
+	SPI_WRITE_TX0(SPI_SRAM, 0);
+	SPI_TRIGGER(SPI_SRAM);
+	while(SPI_IS_BUSY(SPI_SRAM)) {
+		if(!timeout--) {
+			printf("spi_sram_read_byte timeout\n");
+			return(0xFF);
+		}
+	}
+	return(SPI_READ_RX0(SPI_SRAM));
+}
+
+__inline uint8_t disk_read_byte(uint32_t addr)
+{
+	uint8_t byte;
+
+	//if the data is in sram, fetch the needed byte
+	if(addr < 0x10000) {
+		SPI_SET_SS0_LOW(SPI_SRAM);
+		spi_sram_write_byte(3);
+		spi_sram_write_byte((uint8_t)(addr >> 8));
+		spi_sram_write_byte((uint8_t)(addr >> 0));
+		byte = spi_sram_read_byte();
+		SPI_SET_SS0_HIGH(SPI_SRAM);
+	}
+	
+	//additional data is stored in the mcu ram
+	else {
+		byte = doctor[bytes - 0x10000];
+	}
+	
+	//return data read
+	return(byte);
+}
+
+__inline void disk_write_byte(uint32_t addr, uint8_t byte)
+{
+	SPI_SET_SS0_LOW(SPI_SRAM);
+	spi_sram_write_byte(2);
+	spi_sram_write_byte((uint8_t)(addr >> 8));
+	spi_sram_write_byte((uint8_t)(addr >> 0));
+	spi_sram_write_byte(byte);
+	SPI_SET_SS0_HIGH(SPI_SRAM);	
+}
+
 __inline void check_needbyte(void)
 {
+	uint8_t tmpbyte;
+
 	if(needbyte) {
 			
 		//clear flag
 		needbyte = 0;
 		
 		//read next byte to be output
-		if(bytes < 0x10000) {
-			sram_read(bytes,(uint8_t*)&data2,1);
-		}
-		else if(bytes < (0x10000 + 8192)) {
-			data2 = doctor[bytes - 0x10000];
-		}
-		
+		tmpbyte = disk_read_byte(bytes);
+
+		//encode byte to mfm
+		dataout2 = expand[tmpbyte & 0x0F];
+		dataout2 |= expand[(tmpbyte & 0xF0) >> 4] << 8;
+
 		//increment the byte counter
 		bytes++;
 	}
@@ -168,14 +274,12 @@ static void setup_transfer(void)
 {
 	int leadin;
 
-	fifo_init((fifo_t*)&writefifo,(uint8_t*)writebuf,4096);
+	fifo_init((uint8_t*)writebuf,4096);
 
 	//initialize variables
-	outbit = 0;
-	rate = 0;
 	bytes = 0;
 	count = 0;
-	data2 = 0;
+	dataout = dataout2 = 0xAAAA;
 
 	//lead-in byte counter
 	leadin = (DEFAULT_LEAD_IN / 8) - 1;
@@ -258,7 +362,7 @@ void begin_transfer(void)
 				check_needbyte();
 
 				//decode data in the fifo buffer in there is any
-				if(fifo_read_byte((fifo_t*)&writefifo,&byte)) {
+				if(fifo_read_byte(&byte)) {
 
 					//decode the data
 					decode((uint8_t*)decoded,raw_to_raw03_byte(byte),&len,&bitval);
@@ -266,7 +370,8 @@ void begin_transfer(void)
 					//if we have a full byte, write it to sram
 					if(len >= 8) {
 						len -= 8;
-						sram_write(writepos++,decoded,1);
+						disk_write_byte(writepos++,decoded[0]);
+//						sram_write(writepos++,decoded,1);
 						decoded[0] = decoded[1];
 						decoded[1] = 0;
 					}
@@ -277,7 +382,7 @@ void begin_transfer(void)
 			TIMER0->TCSR = TIMER_TCSR_CRST_Msk;
 
 			//decode data in the fifo buffer
-			while(fifo_read_byte((fifo_t*)&writefifo,&byte)) {
+			while(fifo_read_byte(&byte)) {
 
 				//check irq handler requesting another byte
 				check_needbyte();
@@ -285,7 +390,8 @@ void begin_transfer(void)
 				decode((uint8_t*)decoded,raw_to_raw03_byte(byte),&len,&bitval);
 				if(len >= 8) {
 					len -= 8;
-					sram_write(writepos++,decoded,1);
+					disk_write_byte(writepos++,decoded[0]);
+//					sram_write(writepos++,decoded,1);
 					decoded[0] = decoded[1];
 					decoded[1] = 0;
 				}
@@ -294,7 +400,8 @@ void begin_transfer(void)
 			check_needbyte();
 
 			if(len) {
-				sram_write(writepos,decoded,1);
+				disk_write_byte(writepos++,decoded[0]);
+//				sram_write(writepos,decoded,1);
 			}
 
 			LED_GREEN(1);
@@ -408,7 +515,8 @@ void begin_transfer_loader(void)
 		int in,out,len = 0;
 		uint8_t byte,bitval = 0;
 
-		while(fifo_read_byte((fifo_t*)&writefifo,&byte)) {
+//		hexdump("tempbuffer",writefifo.buf,1024);
+		while(fifo_read_byte(&byte)) {
 			decode(tempbuffer,raw_to_raw03_byte(byte),&len,&bitval);
 		}
 
@@ -421,7 +529,8 @@ void begin_transfer_loader(void)
 		hexdump("tempbuffer",tempbuffer,256);
 
 		printf("loader exiting, new diskblock = %d\n",ptr[1] | (ptr[2] << 8));
-		fds_insert_disk(ptr[1] | (ptr[2] << 8));
+		
+		fds_insert_new_disk(ptr[1] | (ptr[2] << 8));
 	}
 	else {
 		printf("transferred %d bytes\r\n",bytes);

@@ -216,7 +216,7 @@ void insert_disklist(int blockstart)
 		diskinfo[0] = (uint8_t)i;
 		diskinfo[1] = (uint8_t)(i >> 8);
 		memcpy(diskinfo + 2,header.name,26);
-		printf("block %X: id = %02d, '%s'\r\n",i,header.id,header.name);
+		printf("block %X: ownerid = %02d, nextid = %02d, '%s'\r\n",i,header.ownerid,header.nextid,header.name);
 		
 		//write diskinfo struct to sram
 		sram_write(pos,diskinfo,32);
@@ -250,7 +250,7 @@ void loader_copy(int location)
 			sram_write(i,copybuffer,COPYBUFFERSIZE);
 		}
 	}
-	
+
 	else {
 		printf("decompressing loader to sram...\r\n");
 		ret = decompress_lz4(lz4_readsrc,loader_lz4_length,lz4_read,lz4_write);

@@ -86,8 +86,8 @@ PIN 47 = rate
 
 #endif
 
-#define TRANSFER_RATE		96400
-#define FDS_KHZ(hz)			(hz / TRANSFER_RATE)
+//#define TRANSFER_RATE		96400
+#define TRANSFER_RATE		94000
 
 #define COPYBUFFERSIZE	256
 #define WRITEBUFSIZE	4096
@@ -102,6 +102,7 @@ void fds_start_diskread(void);
 void fds_setup_transfer(void);
 void fds_setup_diskread(void);
 void fds_tick(void);
+void fds_insert_new_disk(int block);
 void fds_insert_disk(int block);
 void fds_remove_disk(void);
 	

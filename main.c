@@ -33,18 +33,6 @@ menu:
 #include "main.h"
 #include "config.h"
 
-#define FASTCLK
-
-#ifdef FASTCLK
-#define HCLK_CLOCK			72000000
-#define USB_CLKDIV			CLK_CLKDIV_USB(3)
-#define UART_CLKDIV			CLK_CLKDIV_UART(1)
-#else
-#define HCLK_CLOCK			48000000
-#define USB_CLKDIV			CLK_CLKDIV_USB(2)
-#define UART_CLKDIV			CLK_CLKDIV_UART(0)
-#endif
-
 const uint32_t version = VERSION;
 const uint32_t buildnum = BUILDNUM;
 uint32_t boardver = 1;
@@ -148,8 +136,8 @@ void SPI_Init(void)
     /*---------------------------------------------------------------------------------------------------------*/
     /* Configure as a master, clock idle low, 32-bit transaction, drive output on falling clock edge and latch input on rising edge. */
     /* Set IP clock divider. SPI clock rate = 2MHz */
-    SPI_Open(SPI_FLASH, SPI_MASTER, SPI_MODE_0, 8, 35000000);
-    SPI_Open(SPI_SRAM, SPI_MASTER, SPI_MODE_0, 8, 20000000);
+    SPI_Open(SPI_FLASH, SPI_MASTER, SPI_MODE_0, 8, SPI_FLASH_CLK);
+    SPI_Open(SPI_SRAM, SPI_MASTER, SPI_MODE_0, 8, SPI_SRAM_CLK);
 }
 
 //lazy way to make a delay, could be vastly improved...
@@ -167,11 +155,11 @@ static void print_block_info(int block)
 	flash_header_t header2;
 
 	flash_read_disk_header(block,&header2);
-	if(header2.name[0] == 0xFF) {
+	if((uint8_t)header2.name[0] == 0xFF) {
 		printf("block %X: empty\r\n",block);
 	}
 	else {
-		printf("block %X: id = %02d, '%s'\r\n",block,header2.id,header2.name);
+		printf("block %X: nextid = %02d, '%s'\r\n",block,header2.nextid,header2.name);
 	}
 }
 
@@ -381,7 +369,6 @@ void detect_board_version()
 
 uint8_t epdata[64 + 1];
 int havepacket;
-
 void process_send_feature(uint8_t *usbdata,int len);
 
 int main()
@@ -441,6 +428,7 @@ int main()
 	
 	NVIC_SetPriority(USBD_IRQn,2);
 	NVIC_SetPriority(TMR1_IRQn,1);
+	NVIC_SetPriority(TMR2_IRQn,0);
 	NVIC_SetPriority(TMR3_IRQn,0);
 	NVIC_SetPriority(GPAB_IRQn,0);
 	NVIC_SetPriority(EINT0_IRQn,0);

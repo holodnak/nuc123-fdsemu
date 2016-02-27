@@ -24,6 +24,7 @@ int wasready;
 int sequence = 1;
 
 void hexdump(char *desc, void *addr, int len);
+void process_send_feature(uint8_t *usbdata,int len);
 
 enum {
     SPI_WRITEMAX=64-4,
@@ -124,6 +125,7 @@ void USBD_IRQHandler(void)
 
 			if(g_usbd_SetupPacket[1] == SET_REPORT) {
 				havepacket = 1;
+//				process_send_feature(epdata,64);
 			}
         }
 
@@ -556,14 +558,6 @@ void hexdump2(char *desc, uint8_t (*readfunc)(uint32_t), int pos, int len);
 
 extern volatile uint8_t doctor[];
 
-static uint8_t lz4_read(uint32_t addr)
-{
-	uint8_t ret;
-
-	sram_read(addr,&ret,1);
-	return(ret);
-}
-
 static int isreading = 0;
 
 void process_send_feature(uint8_t *usbdata,int len)
@@ -758,6 +752,8 @@ void HID_ClassRequest(void)
             case GET_REPORT:
                 if(buf[3] == 3) {
 					
+//					TIMER_Delay(TIMER2,250);
+
 					//data stage
 					len = get_feature_report(buf[2],usbbuf + 1);
 					usbbuf[0] = buf[2];

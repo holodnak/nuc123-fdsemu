@@ -18,6 +18,7 @@ const flashchip_t flashchips[] = {
 	{0xEF, 0x40, 0x16, 0x400000}, 	//4mbyte
 	{0xEF, 0x40, 0x17, 0x800000}, 	//8mbyte
 	{0xEF, 0x40, 0x18, 0x1000000}, 	//16mbyte
+	{0xEF, 0x40, 0x19, 0x2000000}, 	//32mbyte
 
 	//micron
 	{0x20, 0xBA, 0x19, 0x2000000}, 	//32mbyte
@@ -330,7 +331,7 @@ int flash_find_empty_block(void)
 			printf("block %X: empty\r\n",i);
 		}
 		else {
-			printf("block %X: id = %02d, '%s'\r\n",i,header.id,header.name);
+			printf("block %X: '%s'\r\n",i,header.name);
 		}
 	}
 	return(-1);

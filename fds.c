@@ -25,11 +25,14 @@ volatile uint8_t writebuf[WRITEBUFSIZE];
 
 enum {
 	MODE_TRANSFER = 0,
+	MODE_EMULATE,
 	MODE_DISKREAD
 };
 
 int mode = MODE_TRANSFER;
 int ir_incoming = 0;
+
+int savediskblock;
 
 void fds_init(void)
 {
@@ -52,14 +55,13 @@ void fds_init(void)
 		
 		//insert loader image
 		fds_insert_disk(-1);
+		savediskblock = -1;
 	}
 }
 
 //setup for talking to the ram adaptor
 void fds_setup_transfer(void)
 {
-    /* Unlock protected registers */
-//    SYS_UnlockReg();
 
 #ifdef PROTOTYPE
 	//setup gpio pins for the fds
@@ -102,8 +104,6 @@ void fds_setup_transfer(void)
 //	GPIO_EnableInt(PB, 10, GPIO_INT_FALLING);
 //    NVIC_EnableIRQ(GPAB_IRQn);
 
-//	SYS_LockReg();
-
 	mode = MODE_TRANSFER;
 	printf("entering ram adaptor transfer mode\n");
 }
@@ -111,8 +111,6 @@ void fds_setup_transfer(void)
 //setup for reading/writing disks with the drive
 void fds_setup_diskread(void)
 {
-    /* Unlock protected registers */
-//    SYS_UnlockReg();
 
 #ifdef PROTOTYPE
 	GPIO_DISABLE_DEBOUNCE(PD, BIT4);
@@ -133,15 +131,16 @@ void fds_setup_diskread(void)
 	GPIO_EnableInt(PA, 11, GPIO_INT_RISING);
 #else
 	//setup gpio pins for the fds
-	GPIO_SetMode(PF, BIT3, GPIO_PMD_OUTPUT);	//-write
-	GPIO_SetMode(PB, BIT8, GPIO_PMD_OUTPUT);	//-scanmedia
+	GPIO_SetMode(PF, BIT3, GPIO_PMD_OUTPUT);		//-write
+	GPIO_SetMode(PB, BIT8, GPIO_PMD_OUTPUT);		//-scanmedia
 	GPIO_SetMode(PA, BIT11, GPIO_PMD_INPUT);		//motoron
 	GPIO_SetMode(PA, BIT10, GPIO_PMD_INPUT);		//-writable
-	GPIO_SetMode(PB, BIT5, GPIO_PMD_INPUT);		//-mediaset
-	GPIO_SetMode(PB, BIT6, GPIO_PMD_INPUT);		//-ready
-	GPIO_SetMode(PB, BIT7, GPIO_PMD_OUTPUT);	//-stopmotor
-	GPIO_SetMode(PB, BIT4, GPIO_PMD_INPUT);	//read data
-	GPIO_SetMode(PB, BIT14, GPIO_PMD_OUTPUT);	//write data
+	GPIO_SetMode(PB, BIT5, GPIO_PMD_INPUT);			//-mediaset
+	GPIO_SetMode(PB, BIT6, GPIO_PMD_INPUT);			//-ready
+	GPIO_SetMode(PB, BIT7, GPIO_PMD_OUTPUT);		//-stopmotor
+	GPIO_SetMode(PB, BIT4, GPIO_PMD_INPUT);			//read data
+	GPIO_SetMode(PB, BIT14, GPIO_PMD_OUTPUT);		//write data
+//	GPIO_SetMode(PB, BIT14, GPIO_PMD_OPEN_DRAIN);	//write data
 
 	GPIO_DisableEINT0(PB, 14);
 	GPIO_EnableInt(PB, 4, GPIO_INT_RISING);
@@ -150,8 +149,6 @@ void fds_setup_diskread(void)
 
 	//disable ir remote control
 //	GPIO_DisableInt(PB, 10);
-
-//	SYS_LockReg();
 
 	mode = MODE_DISKREAD;
 	printf("entering disk read mode\n");
@@ -235,21 +232,60 @@ void fds_tick(void)
 	//if the button has been pressed to flip disk sides
 	if(diskflip) {
 		flash_header_t header;
-		
+
 		CLEAR_MEDIASET();
 		CLEAR_WRITABLE();
-		flash_read_disk_header(diskblock + 1,&header);
 		
-		//filename is 0's...must be more sides to this disk
-		if(header.name[0] == 0) {
-			diskblock++;
+		//read current disks header
+		sram_read(0,(uint8_t*)&header,256);
+		
+		//if the savedisk has been previously loaded, do not allow any other disk
+
+		//if this is the save disk for gamedoctor games
+		if((header.flags & 3) == 3 && savediskblock != -1) {
+			
+			diskblock = savediskblock;
+			printf("keeping save disk\n");
 		}
 		
-		//try to find the first disk side
-		else {
-			diskblock = find_first_disk_side(diskblock);
+		//has valid ownerid/nextid fields
+		else if(header.flags & 0x20) {
+			if(header.nextid == 0xFFFF) {
+				if(savediskblock == -1) {
+					diskblock = header.ownerid;
+				}
+				else {
+					diskblock = savediskblock;
+				}
+			}
+			else {
+				diskblock = header.nextid;
+			}
 		}
 
+		//old linear style disk storage
+		else {
+
+			//read disk header for next disk block
+			flash_read_disk_header(diskblock + 1,&header);
+			
+			//filename is 0's...must be more sides to this disk
+			if(header.name[0] == 0) {
+				diskblock++;
+			}
+			
+			//try to find the first disk side
+			else {
+				diskblock = find_first_disk_side(diskblock);
+			}
+		}
+		
+		//if this disk has a save disk
+		if(header.flags & 0x10) {
+			savediskblock = header.saveid;
+			printf("disk has a save disk, block id %d\n",savediskblock);
+		}
+	
 		printf("new disk side slot = %d\n",diskblock);
 		delay_ms(FLIPDELAY);
 
@@ -324,58 +360,105 @@ static void lz4_write(uint32_t addr, uint8_t data)
 	}
 }
 
+void fds_insert_loader()
+{
+	flash_read_data(0,copybuffer,256);
+	
+	//check if slot 0 has an image named "loader.fds"
+	if(memcmp(copybuffer,loaderfilename,10) == 0) {
+		loader_copy(1);
+		printf("inserting loader disk image from flash\r\n");
+	}
+	
+	//decompress loader into sram
+	else {
+		loader_copy(0);
+		printf("inserting loader disk image from firmware\r\n");
+	}
+	SET_MEDIASET();
+	SET_WRITABLE();
+}
+
+/*
+called when a new disk side set is selected (the loader code should only call this)
+*/
+void fds_insert_new_disk(int block)
+{
+	uint8_t flags;
+	uint16_t size;
+
+	//decompress loader to sram
+	if(block == -1) {
+		fds_insert_loader();
+		return;
+	}
+
+	//read header for this disk
+	flash_read_data(block * 0x10000,copybuffer,COPYBUFFERSIZE);
+	sram_write(0x0000,copybuffer,COPYBUFFERSIZE);
+	flags = copybuffer[248];
+	size = copybuffer[240] | (copybuffer[241] << 8);
+	savediskblock = -1;
+
+	//check if this disk image has a save disk, if so, insert it first
+	if(flags & 0x10) {
+		fds_insert_disk(copybuffer[246] | (copybuffer[247] << 8));
+	}
+	
+	//disk image doesnt have a save block
+	else {
+		fds_insert_disk(block);
+	}
+}
+
 void fds_insert_disk(int block)
 {
 	int i;
 	uint8_t flags;
 	uint16_t size;
 
+	//save block selection
 	diskblock = block;
-//	fds_setup_transfer();
-	
+
 	//decompress loader to sram
 	if(block == -1) {
-		flash_read_data(0,copybuffer,256);
-		
-		//check if slot 0 has an image named "loader.fds"
-		if(memcmp(copybuffer,loaderfilename,10) == 0) {
-			loader_copy(1);
-			printf("inserting loader disk image from flash\r\n");
-		}
-		
-		//decompress loader into sram
-		else {
-			loader_copy(0);
-			printf("inserting loader disk image from firmware\r\n");
-		}
+		fds_insert_loader();
+		return;
 	}
 	
 	//copy image from flash to sram
-	else {
-		
-		//read header
-		flash_read_data(diskblock * 0x10000,copybuffer,COPYBUFFERSIZE);
-		sram_write(0x0000,copybuffer,COPYBUFFERSIZE);
-		flags = copybuffer[248];
-		size = copybuffer[240] | (copybuffer[241] << 8);
+
+	//read header
+	flash_read_data(diskblock * 0x10000,copybuffer,COPYBUFFERSIZE);
+	sram_write(0x0000,copybuffer,COPYBUFFERSIZE);
+	flags = copybuffer[248];
+	size = copybuffer[240] | (copybuffer[241] << 8);
+
+	//disk image is compressed (and therefore read-only)
+	if(flags & 0x80) {
+		flags |= 0x40;		//ensure read-only bit is set
+		printf("decompressing image to sram...\r\n");
+		i = decompress_lz4(lz4_readsrc,size,lz4_read,lz4_write);
+		printf("decompressed image from %d to %d bytes (%d%% ratio)\n",size, i, 100 * size / i);
+	}
 	
-		//disk image is compressed (and therefore read-only)
-		if(flags & 0x80) {
-			flags |= 0x40;		//ensure read-only bit is set
-			printf("decompressing image to sram...\r\n");
-			i = decompress_lz4(lz4_readsrc,size,lz4_read,lz4_write);
-			printf("decompressed image from %d to %d bytes (%d%% ratio)\n",size, i, 100 * size / i);
+	else {
+		printf("copying image to sram...\r\n");
+		for(i=0;i<0x10000;i+=COPYBUFFERSIZE) {
+			flash_read_data((diskblock * 0x10000) + i,copybuffer,COPYBUFFERSIZE);
+			sram_write(i,copybuffer,COPYBUFFERSIZE);
 		}
-		
-		else {
-			printf("copying image to sram...\r\n");
-			for(i=0;i<0x10000;i+=COPYBUFFERSIZE) {
-				flash_read_data((diskblock * 0x10000) + i,copybuffer,COPYBUFFERSIZE);
-				sram_write(i,copybuffer,COPYBUFFERSIZE);
+		printf("verifying image in sram...\r\n");
+		for(i=0;i<0x10000;i+=COPYBUFFERSIZE) {
+			flash_read_data((diskblock * 0x10000) + i,copybuffer,COPYBUFFERSIZE);
+			sram_read(i,(uint8_t*)writebuf,COPYBUFFERSIZE);
+			if(memcmp(copybuffer,(uint8_t*)writebuf,COPYBUFFERSIZE) != 0) {
+				printf("error copying to sram\n");
+				break;
 			}
 		}
-		printf("inserting disk at block %d\r\n",block);
 	}
+	printf("inserting disk at block %d\r\n",block);
 	SET_MEDIASET();
 	SET_WRITABLE();
 }

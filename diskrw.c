@@ -23,6 +23,12 @@ static volatile uint8_t *diskbuffer = writebuf;
 static volatile int bufpos, sentbufpos;
 static volatile int bytes;
 
+void TMR2_IRQHandler(void)
+{
+	TIMER_ClearIntFlag(TIMER2);
+	PIN_WRITEDATA = 1;
+}
+
 //for sending data out to disk drive
 void TMR3_IRQHandler(void)
 {
@@ -31,12 +37,15 @@ void TMR3_IRQHandler(void)
 	//output current bit
 	PIN_WRITEDATA = dataout & 1;
 
+	//start timer
+//	TIMER_Start(TIMER2);
+
 	//shift the data byte over to the next next bit
 	dataout >>= 1;
 
 	//increment bit counter
 	count++;
-		
+
 	//if we have sent all eight bits of this byte, get next byte
 	if(count == 16) {
 		count = 0;
@@ -47,6 +56,7 @@ void TMR3_IRQHandler(void)
 		//signal we need another mfm byte
 		needbyte++;
 	}
+	
 }
 
 extern int ir_incoming;
@@ -85,6 +95,11 @@ void fds_start_diskwrite(void)
 	CLEAR_STOPMOTOR();
 	SET_SCANMEDIA();
 
+/*	TIMER_Open(TIMER2, TIMER_ONESHOT_MODE, TRANSFER_RATE * 9);
+	TIMER_Stop(TIMER2);
+	TIMER_EnableInt(TIMER2);
+	NVIC_EnableIRQ(TMR2_IRQn);
+*/
 	TIMER_Stop(TIMER0);
 	TIMER_Stop(TIMER1);
 	TIMER_Start(TIMER3);
@@ -94,12 +109,19 @@ void fds_start_diskwrite(void)
 	NVIC_EnableIRQ(TMR3_IRQn);
 	LED_GREEN(1);
 	LED_RED(1);
+
+	PIN_WRITEDATA = 1;
 }
 
 void fds_stop_diskwrite(void)
 {
 	LED_GREEN(1);
 	LED_RED(0);
+
+	TIMER_DisableInt(TIMER2);
+	TIMER_Stop(TIMER2);
+	NVIC_DisableIRQ(TMR2_IRQn);
+
 	TIMER_Stop(TIMER3);
 	NVIC_DisableIRQ(TMR3_IRQn);
 	CLEAR_WRITE();
@@ -116,6 +138,7 @@ int fds_diskwrite(void)
 //	sram_read_start(0);
 	
 	bytes = 0;
+	needbyte = 0;
 	printf("waiting on drive to be ready\n");
 	while(IS_READY() == 0);
 	LED_GREEN(0);
@@ -124,6 +147,9 @@ int fds_diskwrite(void)
 	
 	while(IS_READY()) {
 		if(needbyte) {
+			if(needbyte > 1 && bytes > 0) {
+				printf("underrun\n");
+			}
 			needbyte = 0;
 			if(bytes < 0x10000) {
 //				sram_read_byte(&byte);
@@ -134,7 +160,7 @@ int fds_diskwrite(void)
 			}
 			else {
 				byte = 0;
-				printf("out of space\n");
+//				printf("out of space\n");
 			}
 			bytes++;
 			dataout2 = expand[byte & 0x0F];
@@ -171,6 +197,8 @@ void fds_start_diskread(void)
     NVIC_EnableIRQ(GPAB_IRQn);
 	LED_GREEN(1);
 	LED_RED(1);
+	
+	PIN_WRITEDATA = 0;
 }
 
 void fds_stop_diskread(void)
@@ -213,7 +241,7 @@ int fds_diskread_getdata(uint8_t *bufbuf, int len)
 			printf("drive ready, starting read\n");
 		}
 	}
-	
+
 	while(IS_READY() && ((n = get_buf_size()) < len)) {
 //		printf("waiting for data\n");
 	}

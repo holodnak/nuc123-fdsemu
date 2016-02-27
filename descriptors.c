@@ -9,6 +9,7 @@
 #include "NUC123.h"
 #include "hid_transfer.h"
 #include "build.h"
+#include "config.h"
 
 #define BUFFER_SIZE 63
 #define DISK_BUFFER_SIZE 63
@@ -237,18 +238,23 @@ const uint8_t gu8StringSerial[26] =
 {
     26,             // bLength
     DESC_STRING,    // bDescriptorType
-    'A', 0, 
-	'0', 0, 
+#ifdef FASTCLK
+    '7', 0, 
 	'2', 0, 
+#else
+    '4', 0, 
+	'8', 0, 	
+#endif
+	'm', 0, 
+	'h', 0, 
+	'z', 0, 
 	'0', 0, 
-	'1', 0, 
-	'4', 0, 
 	'0', 0, 
-	'9', 0, 
 	'0', 0, 
-	'3', 0, 
 	'0', 0, 
-	'4', 0
+	'0', 0, 
+	'0', 0, 
+	'0', 0
 };
 
 const uint8_t *gpu8UsbString[4] =

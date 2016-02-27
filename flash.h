@@ -1,17 +1,39 @@
 #ifndef __flash_h__
 #define __flash_h__
 
+//header format cannot change!  finalized!
+
 typedef struct flash_header_s {
     char		name[240];			//null terminated ascii string
-	uint16_t	size;				//size of data
-	uint16_t	lead_in;			//number of bits for lead in (0 for default)
-	uint16_t	id;					//block id number
+
+	//16 extra bytes for "other things"
+	
+	//240-241 - size of disk image bin data
+	uint16_t	size;				//size of data stored in the block
+	
+	//242-243 - duration of lead-in (not used)
+	uint16_t	ownerid;			//id of first slot of this game
+
+	//244-245 - id (slot number) of next disk in the chain
 	uint16_t	nextid;				//id of next block in disk chain
-	uint8_t		flags;				//disk flags cr0000tt
+
+	//246-247 - "save disk" block id (if first disk of a game doctor image)
+	uint16_t	saveid;
+
+	//248 - flags
+	uint8_t		flags;				//disk flags cris-00tt
 									// c = compressed
 									// r = read only
-									// t = type
-	uint8_t		reserved[7];
+									// i = owner id/next id fields are VALID
+									// s = saveid field is VALID
+									// t = type (0=fds, 1=gd, 3=savedisk)
+									
+	//249 - flags2
+	uint8_t		flags2;
+
+	//250-255 - unused
+	uint8_t		reserved[6];
+
 } flash_header_t;
 
 void flash_get_id(uint8_t *buf);
