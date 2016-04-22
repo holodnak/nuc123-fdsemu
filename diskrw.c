@@ -32,10 +32,10 @@ void TMR2_IRQHandler(void)
 //for sending data out to disk drive
 void TMR3_IRQHandler(void)
 {
-	TIMER_ClearIntFlag(TIMER3);
-
 	//output current bit
 	PIN_WRITEDATA = dataout & 1;
+
+	TIMER_ClearIntFlag(TIMER3);
 
 	//start timer
 //	TIMER_Start(TIMER2);
@@ -94,15 +94,11 @@ void fds_start_diskwrite(void)
 	CLEAR_WRITE();
 	CLEAR_STOPMOTOR();
 	SET_SCANMEDIA();
+	SET_WRITE();
 
-/*	TIMER_Open(TIMER2, TIMER_ONESHOT_MODE, TRANSFER_RATE * 9);
-	TIMER_Stop(TIMER2);
-	TIMER_EnableInt(TIMER2);
-	NVIC_EnableIRQ(TMR2_IRQn);
-*/
 	TIMER_Stop(TIMER0);
 	TIMER_Stop(TIMER1);
-	TIMER_Start(TIMER3);
+	TIMER_Stop(TIMER3);
 	NVIC_DisableIRQ(TMR1_IRQn);
     NVIC_DisableIRQ(GPAB_IRQn);
     NVIC_DisableIRQ(EINT0_IRQn);
@@ -131,11 +127,22 @@ void fds_stop_diskwrite(void)
 
 extern volatile uint8_t doctor[];
 
+/*
+- The disk drive unit signals the RAM adaptor when the head has moved to the 
+beginning of the disk via the "-ready" signal it sends out (more on this 
+later). The "-ready" signal is based on a mechanical switch inside the drive 
+which is activated when the head is brought back to the outer most edge of 
+the disk (the beginning). Because the switch will usually be triggered 
+prematurely, the first 13000 bits (approx.) of data the drive will send out 
+immediately after this switch is activated will be invalid. To compensate 
+for this, the RAM adaptor purposely ignores the first 26100 bits (approx.) 
+sent to it since it recieves the "-ready" signal from the disk drive.
+*/
+#define INVALID_BITS	20000
+
 int fds_diskwrite(void)
 {
 	uint8_t byte;
-	
-//	sram_read_start(0);
 	
 	bytes = 0;
 	needbyte = 0;
@@ -143,7 +150,8 @@ int fds_diskwrite(void)
 	while(IS_READY() == 0);
 	LED_GREEN(0);
 	printf("writing...\n");
-	SET_WRITE();
+
+	TIMER_Start(TIMER3);
 	
 	while(IS_READY()) {
 		if(needbyte) {
@@ -152,7 +160,6 @@ int fds_diskwrite(void)
 			}
 			needbyte = 0;
 			if(bytes < 0x10000) {
-//				sram_read_byte(&byte);
 				sram_read(bytes,&byte,1);
 			}
 			else if(bytes < (0x10000 + 8192)) {
@@ -165,12 +172,14 @@ int fds_diskwrite(void)
 			bytes++;
 			dataout2 = expand[byte & 0x0F];
 			dataout2 |= expand[(byte & 0xF0) >> 4] << 8;
+/*			if(bytes >= (INVALID_BITS / 8)) {
+				SET_WRITE();
+				TIMER_Start(TIMER3);
+			}*/
 		}
 	}
 	
 	CLEAR_WRITE();
-
-//	sram_read_end();
 	printf("disk write finished, wrote %d bytes.\n", bytes);
 	return(0);
 }

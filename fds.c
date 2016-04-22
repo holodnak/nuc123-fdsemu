@@ -305,7 +305,7 @@ void fds_tick(void)
 	}
 
 	//if ram adaptor wants to scan the media and run the motor
-	if(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
+	while(IS_SCANMEDIA() && IS_DONT_STOPMOTOR()) {
 
 		SET_MOTORON();
 
@@ -385,7 +385,6 @@ called when a new disk side set is selected (the loader code should only call th
 void fds_insert_new_disk(int block)
 {
 	uint8_t flags;
-	uint16_t size;
 
 	//decompress loader to sram
 	if(block == -1) {
@@ -397,7 +396,7 @@ void fds_insert_new_disk(int block)
 	flash_read_data(block * 0x10000,copybuffer,COPYBUFFERSIZE);
 	sram_write(0x0000,copybuffer,COPYBUFFERSIZE);
 	flags = copybuffer[248];
-	size = copybuffer[240] | (copybuffer[241] << 8);
+//	size = copybuffer[240] | (copybuffer[241] << 8);
 	savediskblock = -1;
 
 	//check if this disk image has a save disk, if so, insert it first

@@ -53,6 +53,9 @@ void SYS_Init(void)
     /* Init System Clock                                                                                       */
     /*---------------------------------------------------------------------------------------------------------*/
 	
+    /* Enable XT1_OUT(PF0) and XT1_IN(PF1) */
+//    SYS->GPF_MFP |= SYS_GPF_MFP_PF0_XT1_OUT | SYS_GPF_MFP_PF1_XT1_IN;
+	
     /* Enable Internal RC 22.1184MHz clock */
     CLK_EnableXtalRC(CLK_PWRCON_OSC22M_EN_Msk);
 
@@ -62,9 +65,17 @@ void SYS_Init(void)
     /* Switch HCLK clock source to Internal RC and HCLK source divide 1 */
     CLK_SetHCLK(CLK_CLKSEL0_HCLK_S_HIRC, CLK_CLKDIV_HCLK(1));
 
-    /* Set core clock as HCLK_CLOCK */
+    /* Enable external XTAL 12MHz clock */
+//    CLK_EnableXtalRC(CLK_PWRCON_XTL12M_EN_Msk);
+
+    //check if external xtal is working, if not, disable it
+//    if(CLK_WaitClockReady(CLK_CLKSTATUS_XTL12M_STB_Msk) == 0) {
+//		CLK_DisableXtalRC(CLK_PWRCON_XTL12M_EN_Msk);
+//	}
+
+    /* Set core clock */
     CLK_SetCoreClock(HCLK_CLOCK);
-	
+
 	/* Enable module clocks */
     CLK_EnableModuleClock(UART0_MODULE);
     CLK_EnableModuleClock(SPI0_MODULE);
@@ -442,7 +453,7 @@ int main()
 	while(1) {
 		if(havepacket) {
 			havepacket = 0;
-			process_send_feature(epdata,64);
+//			process_send_feature(epdata,64);
 		}
 		console_tick();
 		fds_tick();

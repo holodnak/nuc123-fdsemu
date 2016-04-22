@@ -4,6 +4,7 @@
 #include "fds.h"
 #include "sram.h"
 #include "flash.h"
+#include "build.h"
 
 //size of entire disk list data struct array
 #define DISKLISTSIZE (32 * 256)		//size of entry * number of slots
@@ -106,9 +107,9 @@ static void lz4_write(uint32_t addr, uint8_t data)
 }
 
 //string to find to start sending the fake disklist
-const uint8_t diskliststr[17] = {0x80,0x03,0x07,0x10,'D','I','S','K','L','I','S','T',0x00,0x80,0x00,0x20,0x00};
+const uint8_t diskliststr[17] = {0x80,0x03,0x07,0x10,'D','I','S','K','L','I','S','T',0x00,0x70};
 
-int find_disklist()
+/*int find_disklist()
 {
 	int pos = 0;
 	int count = 0;
@@ -158,7 +159,34 @@ int find_disklist()
 	}
 	sram_read_end();
 	return(-1);
+}*/
+int find_disklist(void)
+{
+	int pos = 0;
+	uint8_t byte;
+	uint8_t tmp[16];
+
+	for(pos=0;pos<65500;) {
+
+		//read a byte from the flash
+		sram_read(pos,(uint8_t*)&byte,1);
+		pos++;
+		
+		//first byte matches
+		if(byte == diskliststr[0]) {
+			
+			//read remaining bytes
+			sram_read(pos,tmp,13);
+			
+			//string matches?
+			if(memcmp(diskliststr + 1,tmp,13) == 0) {
+				return(pos);
+			}
+		}
+	}
+	return(-1);
 }
+
 
 uint16_t calc_crc2(uint8_t (*readfunc)(uint32_t), uint32_t pos, int size) {
     uint32_t crc=0x8000;
@@ -172,9 +200,9 @@ uint16_t calc_crc2(uint8_t (*readfunc)(uint32_t), uint32_t pos, int size) {
     }
     return crc;
 }
-	void hexdump2(char *desc, uint8_t (*readfunc)(uint32_t), int pos, int len);
+void hexdump2(char *desc, uint8_t (*readfunc)(uint32_t), int pos, int len);
 
-void insert_disklist(int blockstart)
+/*void insert_disklist(int blockstart)
 {
 	int pos = blockstart;
 	flash_header_t header;
@@ -237,7 +265,104 @@ void insert_disklist(int blockstart)
 	diskinfo[0] = (uint8_t)(crc >> 0);
 	diskinfo[1] = (uint8_t)(crc >> 8);
 	sram_write(blockstart + DISKLISTSIZE,diskinfo,2);
+}*/
+int insert_disklist(int block3)
+{
+	int block4 = 0;
+	int pos, num = 0;
+	uint8_t byte = 0;
+	uint16_t crc;
+	int disklistsize;
+	int i, blocks = flash_get_total_blocks();
+	flash_header_t header;
+
+	uint8_t diskinfo[32];
+
+	pos = block3 + 17 + 2;
+	while(byte == 0) {
+		sram_read(pos++,&byte,1);
+	}
+	block4 = pos;
+	
+	//this now points to beginning of block4 data
+	block4++;
+	
+	printf("block 3: %d\n",block3);
+	printf("block 4: %d\n",block4);
+	
+	//this points to first disk list entry in block4
+	pos = block4 + 32;
+
+	//gather up all disk game names
+	for(num=0, i=0;i<blocks && num < 890;i++) {
+		
+		//read disk header information
+		flash_read_disk_header(i,&header);
+		
+		//empty block
+		if((uint8_t)header.name[0] == 0xFF) {
+			continue;
+		}
+
+		//continuation of disk sides
+		if(header.name[0] == 0x00) {
+			continue;
+		}
+
+		//fill diskinfo struct with data
+		memset(diskinfo,0,32);
+		diskinfo[0] = (uint8_t)i;
+		diskinfo[1] = (uint8_t)(i >> 8);
+		memcpy(diskinfo + 2,header.name,26);
+		printf("block %X: ownerid = %02d, nextid = %02d, '%s'\r\n",i,header.ownerid,header.nextid,header.name);
+		
+		//write diskinfo struct to sram
+		sram_write(pos,diskinfo,32);
+
+		//increment current position and number of games counter
+		pos += 32;
+		num++;
+	}
+
+	//calculate disklistsize
+	disklistsize = pos - block4;
+
+	//make sure that the crc bytes are zero (for crc)
+	memset(diskinfo,0,32);
+	sram_write(pos,diskinfo,32);
+	sram_write(block3 + 16,diskinfo,2);
+
+	//put num into two bytes and write it to sram
+	diskinfo[0] = (uint8_t)num;
+	diskinfo[1] = (uint8_t)(num >> 8);
+	printf("disks found: %d\n",num);
+	sram_write(block4,diskinfo,2);
+	
+	//save firmware build number to sram
+	diskinfo[0] = (uint8_t)BUILDNUM;
+	diskinfo[1] = (uint8_t)(BUILDNUM >> 8);
+	sram_write(block4+30,diskinfo,2);
+	
+	//calculate block crc and store it to sram
+	crc = calc_crc2(lz4_read,block4 - 1,disklistsize + 2 + 1);
+	diskinfo[0] = (uint8_t)(crc >> 0);
+	diskinfo[1] = (uint8_t)(crc >> 8);
+	sram_write(block4 + disklistsize,diskinfo,2);
+
+	//fixup block3 file size
+	diskinfo[0] = (uint8_t)(disklistsize >> 0);
+	diskinfo[1] = (uint8_t)(disklistsize >> 8);
+	sram_write(block3 + 13,diskinfo,2);
+
+	//calculate block crc and store it to sram
+	crc = calc_crc2(lz4_read,block3,16 + 2);
+	diskinfo[0] = (uint8_t)(crc >> 0);
+	diskinfo[1] = (uint8_t)(crc >> 8);
+	sram_write(block3 + 16,diskinfo,2);
+
+	return(0);
 }
+
 
 void loader_copy(int location)
 {

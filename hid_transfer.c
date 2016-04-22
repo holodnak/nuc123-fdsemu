@@ -124,8 +124,8 @@ void USBD_IRQHandler(void)
             USBD_CtrlOut();
 
 			if(g_usbd_SetupPacket[1] == SET_REPORT) {
-				havepacket = 1;
-//				process_send_feature(epdata,64);
+//				havepacket = 1;
+				process_send_feature(epdata,64);
 			}
         }
 
@@ -559,6 +559,7 @@ void hexdump2(char *desc, uint8_t (*readfunc)(uint32_t), int pos, int len);
 extern volatile uint8_t doctor[];
 
 static int isreading = 0;
+static int transfer_slot;
 
 void process_send_feature(uint8_t *usbdata,int len)
 {
@@ -630,7 +631,11 @@ void process_send_feature(uint8_t *usbdata,int len)
 		}
 	}
 
-	//write firmware to aprom
+	else if(reportid == ID_SRAM_TRANSFER) {
+		transfer_slot = buf[1] | (buf[2] << 8);
+	}
+
+		//write firmware to aprom
 	else if(reportid == ID_UPDATEFIRMWARE) {
 		printf("firmware update requested\n");
 		update_firmware();
@@ -680,7 +685,7 @@ void process_send_feature(uint8_t *usbdata,int len)
 
 int get_feature_report(uint8_t reportid, uint8_t *buf)
 {
-	int len = 63;
+	int i,len = 63;
 
 //	printf("get_feature_report: report id %X\n",reportid);
 	//flash read
@@ -720,7 +725,22 @@ int get_feature_report(uint8_t reportid, uint8_t *buf)
 		len = 1;
 	}
 
-	//self testing result
+	else if(reportid == ID_SRAM_TRANSFER_START) {
+		spi_deselect_device(SPI_SRAM, 0);
+		spi_deselect_device(SPI_FLASH, 0);
+		printf("sram transfer: slot = %d\n", transfer_slot);
+		for(i=0;i<256;i++) {
+//			printf("writing page %d\n",i);
+			sram_read(i * 256,copybuffer,256);
+			flash_write_page(i + (transfer_slot << 8),copybuffer);
+			flash_busy_wait();
+		}
+		printf("done\n");
+		buf[0] = 0;
+		len = 1;
+	}
+
+	//bootloader crc
 	else if(reportid == ID_BOOTLOADER_VERIFY) {
 		uint32_t crc = bootloader_crc32();
 		buf[0] = (uint8_t)(crc >> 0);

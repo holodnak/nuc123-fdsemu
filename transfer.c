@@ -366,7 +366,7 @@ void begin_transfer(void)
 
 					//decode the data
 					decode((uint8_t*)decoded,raw_to_raw03_byte(byte),&len,&bitval);
-					
+
 					//if we have a full byte, write it to sram
 					if(len >= 8) {
 						len -= 8;
@@ -440,8 +440,8 @@ void begin_transfer(void)
 
 		//write 256 bytes at a time
 		for(i=0;i<256;i++) {
-			sram_read(i * 256,tempbuffer,256);
-			flash_write_page(flashpage++,tempbuffer);
+			sram_read(i * 256,copybuffer,256);
+			flash_write_page(flashpage++,copybuffer);
 			flash_busy_wait();
 		}
 	}
